@@ -72,46 +72,51 @@ def inject_css():
             }}
             .block-container {{
                 max-width: 1200px;
-                padding-top: 1.1rem;
+                padding-top: 1rem;
                 padding-bottom: 8rem;
             }}
             .hero-card {{
                 background: linear-gradient(135deg, {PRIMARY} 0%, #115e59 100%);
                 color: white;
-                border-radius: 24px;
-                padding: 22px 24px;
-                box-shadow: 0 18px 40px rgba(15,118,110,0.20);
+                border-radius: 20px;
+                padding: 20px;
+                box-shadow: 0 12px 30px rgba(15,118,110,0.15);
                 margin-bottom: 16px;
+            }}
+            .hero-card div:first-child {{
+                font-size: 1.6rem !important;
+                font-weight: 800;
             }}
             .soft-card {{
                 background: rgba(255,255,255,0.88);
                 border: 1px solid #e2e8f0;
-                border-radius: 18px;
-                padding: 16px;
-                box-shadow: 0 8px 30px rgba(15,23,42,0.05);
+                border-radius: 16px;
+                padding: 14px;
+                box-shadow: 0 4px 20px rgba(15,23,42,0.03);
             }}
             div[data-testid="metric-container"] {{
                 border: 1px solid #dbe4ea;
-                border-radius: 18px;
-                padding: 14px 18px;
+                border-radius: 16px;
+                padding: 12px 14px;
                 background: rgba(255,255,255,0.95);
-                box-shadow: 0 8px 24px rgba(15,23,42,0.05);
+                box-shadow: 0 4px 15px rgba(15,23,42,0.03);
             }}
             .stButton>button, .stDownloadButton>button {{
                 border-radius: 12px !important;
                 border: none !important;
                 font-weight: 700 !important;
+                min-height: 44px; /* Dễ bấm trên mobile */
             }}
             .chip {{
                 display: inline-block;
-                padding: 6px 10px;
+                padding: 4px 10px;
                 background: #ecfeff;
                 color: {PRIMARY};
                 border-radius: 999px;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 700;
-                margin-right: 8px;
-                margin-bottom: 8px;
+                margin-right: 6px;
+                margin-bottom: 6px;
                 border: 1px solid #ccfbf1;
             }}
             .danger-text {{ color: {DANGER}; font-weight: 700; }}
@@ -122,32 +127,57 @@ def inject_css():
             div[data-testid="stSidebar"] * {{ color: #f8fafc; }}
             div[data-testid="stPopover"] {{
                 position: fixed !important;
-                right: 22px !important;
+                right: 20px !important;
                 bottom: 20px !important;
                 z-index: 999999 !important;
             }}
             div[data-testid="stPopover"] > button {{
-                width: 62px !important;
-                height: 62px !important;
+                width: 56px !important;
+                height: 56px !important;
                 border-radius: 999px !important;
                 background: linear-gradient(135deg, {SUCCESS}, {ACCENT}) !important;
-                box-shadow: 0 15px 30px rgba(20,184,166,.35) !important;
-                border: 4px solid #ffffff !important;
+                box-shadow: 0 10px 25px rgba(20,184,166,.4) !important;
+                border: 3px solid #ffffff !important;
             }}
             div[data-testid="stPopover"] > button * {{ display: none !important; }}
             div[data-testid="stPopover"] > button::after {{
                 content: "+";
                 color: white;
-                font-size: 34px;
+                font-size: 30px;
                 font-weight: 700;
+                line-height: 1;
             }}
+            
+            /* TINH CHỈNH RIÊNG CHO ĐIỆN THOẠI */
             @media (max-width: 768px) {{
                 .block-container {{
-                    padding-left: 1rem;
-                    padding-right: 1rem;
+                    padding-left: 0.8rem;
+                    padding-right: 0.8rem;
+                    padding-top: 0.8rem;
                 }}
-                div[data-testid="stHorizontalBlock"] {{ gap: 0.7rem; }}
-                div[data-testid="stPopover"] > button {{ width: 56px !important; height: 56px !important; }}
+                .hero-card {{
+                    padding: 16px;
+                    border-radius: 16px;
+                }}
+                .hero-card div:first-child {{
+                    font-size: 1.4rem !important;
+                }}
+                div[data-testid="stHorizontalBlock"] {{ gap: 0.5rem; }}
+                div[data-testid="stMetricValue"] > div {{
+                    font-size: 1.3rem !important; 
+                }}
+                .stDataFrame {{
+                    font-size: 13px;
+                }}
+                div[data-testid="stPopover"] > button {{ 
+                    width: 50px !important; 
+                    height: 50px !important; 
+                    right: 16px !important;
+                    bottom: 16px !important;
+                }}
+                div[data-testid="stPopover"] > button::after {{
+                    font-size: 26px;
+                }}
             }}
         </style>
         """,
@@ -159,8 +189,8 @@ def page_header(title: str, subtitle: str):
     st.markdown(
         f"""
         <div class="hero-card">
-            <div style="font-size: 1.9rem; font-weight: 900;">{title}</div>
-            <div style="opacity: .9; margin-top: 6px; font-size: 1rem;">{subtitle}</div>
+            <div>{title}</div>
+            <div style="opacity: .9; margin-top: 4px; font-size: 0.95rem;">{subtitle}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -629,11 +659,14 @@ def render_dashboard(uid: int):
     month_df = data["month_df"]
     page_header("🏠 Tổng quan tài chính", "Theo dõi tài sản, ngân sách và dòng tiền mỗi ngày.")
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng tài sản", money(data["total_assets"]))
-    c2.metric("Thu nhập tháng", money(data["month_income"]))
-    c3.metric("Chi tiêu tháng", money(data["month_expense"]))
-    c4.metric("Chênh lệch tháng", money(data["balance"]))
+    # Tối ưu cho mobile: chia 2x2 thay vì 4 cột ngang
+    row1_c1, row1_c2 = st.columns(2)
+    row1_c1.metric("Tổng tài sản", money(data["total_assets"]))
+    row1_c2.metric("Chênh lệch tháng", money(data["balance"]))
+    
+    row2_c1, row2_c2 = st.columns(2)
+    row2_c1.metric("Thu nhập tháng", money(data["month_income"]))
+    row2_c2.metric("Chi tiêu tháng", money(data["month_expense"]))
 
     budget = data["budget"]
     spent = data["month_expense"]
@@ -650,7 +683,7 @@ def render_dashboard(uid: int):
     else:
         st.info("Bạn chưa đặt ngân sách cho tháng hiện tại.")
 
-    left, right = st.columns([1.1, 1.4])
+    left, right = st.columns([1, 1])
     with left:
         st.markdown("### 💼 Ví hiện có")
         if wallets.empty:
@@ -662,8 +695,8 @@ def render_dashboard(uid: int):
                     f"""
                     <div class="soft-card" style="margin-bottom: 10px;">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <div><strong>{icon} {wallet['name']}</strong><br><span style="color:#64748b; font-size: 13px;">{wallet['type']}</span></div>
-                            <div style="font-weight:800; color:{PRIMARY};">{money(wallet['balance'])}</div>
+                            <div><strong>{icon} {wallet['name']}</strong><br><span style="color:#64748b; font-size: 12px;">{wallet['type']}</span></div>
+                            <div style="font-weight:800; color:{PRIMARY}; font-size: 1.1rem;">{money(wallet['balance'])}</div>
                         </div>
                     </div>
                     """,
@@ -707,7 +740,7 @@ def render_dashboard(uid: int):
                 hole=0.58,
                 color_discrete_sequence=px.colors.sequential.Tealgrn,
             )
-            fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
+            fig.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Chưa có dữ liệu chi tiêu trong tháng.")
@@ -726,7 +759,7 @@ def render_dashboard(uid: int):
                     color="type",
                     color_discrete_map={"income": SUCCESS, "expense": DANGER},
                 )
-                fig2.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10))
+                fig2.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(fig2, use_container_width=True)
             else:
                 st.info("Chưa có dữ liệu 14 ngày gần nhất.")
@@ -741,20 +774,23 @@ def render_transactions(uid: int):
     wallet_map = {row["name"]: int(row["id"]) for _, row in wallets_df.iterrows()}
 
     tab_expense, tab_income, tab_transfer, tab_edit = st.tabs([
-        "💸 Chi tiêu", "💰 Thu nhập", "🔄 Chuyển khoản", "✏️ Sửa giao dịch"
+        "💸 Chi", "💰 Thu", "🔄 Chuyển", "✏️ Sửa"
     ])
 
     with tab_expense:
         cats = get_categories(uid, "expense")
         cat_map = {f"{r['icon']} {r['name']}": int(r['id']) for _, r in cats.iterrows()}
         with st.form("add_expense_form", clear_on_submit=True):
-            a, b = st.columns(2)
-            amount = a.number_input("Số tiền", min_value=0.0, step=10000.0)
-            category_label = b.selectbox("Danh mục", list(cat_map.keys()))
-            c1, c2, c3 = st.columns([1.2, 1.8, 1])
-            wallet_name = c1.selectbox("Chi từ ví", list(wallet_map.keys()), key="expense_wallet")
-            note = c2.text_input("Ghi chú")
-            tx_date = c3.date_input("Ngày", value=date.today(), key="expense_date")
+            # Tối ưu form nhập trên mobile: gom về 2 cột
+            c1, c2 = st.columns(2)
+            amount = c1.number_input("Số tiền", min_value=0.0, step=10000.0)
+            tx_date = c2.date_input("Ngày", value=date.today(), key="expense_date")
+            
+            c3, c4 = st.columns(2)
+            category_label = c3.selectbox("Danh mục", list(cat_map.keys()))
+            wallet_name = c4.selectbox("Chi từ ví", list(wallet_map.keys()), key="expense_wallet")
+            
+            note = st.text_input("Ghi chú")
             submitted = st.form_submit_button("Lưu khoản chi", type="primary", use_container_width=True)
             if submitted:
                 if amount <= 0:
@@ -768,13 +804,15 @@ def render_transactions(uid: int):
         cats = get_categories(uid, "income")
         cat_map = {f"{r['icon']} {r['name']}": int(r['id']) for _, r in cats.iterrows()}
         with st.form("add_income_form", clear_on_submit=True):
-            a, b = st.columns(2)
-            amount = a.number_input("Số tiền", min_value=0.0, step=100000.0, key="income_amount")
-            category_label = b.selectbox("Nguồn thu", list(cat_map.keys()))
-            c1, c2, c3 = st.columns([1.2, 1.8, 1])
-            wallet_name = c1.selectbox("Vào ví", list(wallet_map.keys()), key="income_wallet")
-            note = c2.text_input("Ghi chú", key="income_note")
-            tx_date = c3.date_input("Ngày", value=date.today(), key="income_date")
+            c1, c2 = st.columns(2)
+            amount = c1.number_input("Số tiền", min_value=0.0, step=100000.0, key="income_amount")
+            tx_date = c2.date_input("Ngày", value=date.today(), key="income_date")
+            
+            c3, c4 = st.columns(2)
+            category_label = c3.selectbox("Nguồn thu", list(cat_map.keys()))
+            wallet_name = c4.selectbox("Vào ví", list(wallet_map.keys()), key="income_wallet")
+            
+            note = st.text_input("Ghi chú", key="income_note")
             submitted = st.form_submit_button("Lưu thu nhập", type="primary", use_container_width=True)
             if submitted:
                 if amount <= 0:
@@ -786,13 +824,15 @@ def render_transactions(uid: int):
 
     with tab_transfer:
         with st.form("transfer_form", clear_on_submit=True):
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             amount = c1.number_input("Số tiền", min_value=0.0, step=50000.0, key="transfer_amount")
-            from_wallet = c2.selectbox("Từ ví", list(wallet_map.keys()), key="from_wallet")
-            to_wallet = c3.selectbox("Đến ví", list(wallet_map.keys()), key="to_wallet")
-            d1, d2 = st.columns([2, 1])
-            note = d1.text_input("Nội dung", key="transfer_note")
-            tx_date = d2.date_input("Ngày", value=date.today(), key="transfer_date")
+            tx_date = c2.date_input("Ngày", value=date.today(), key="transfer_date")
+            
+            c3, c4 = st.columns(2)
+            from_wallet = c3.selectbox("Từ ví", list(wallet_map.keys()), key="from_wallet")
+            to_wallet = c4.selectbox("Đến ví", list(wallet_map.keys()), key="to_wallet")
+            
+            note = st.text_input("Nội dung", key="transfer_note")
             submitted = st.form_submit_button("Thực hiện chuyển khoản", type="primary", use_container_width=True)
             if submitted:
                 if amount <= 0:
@@ -819,11 +859,11 @@ def render_transactions(uid: int):
         return
 
     st.markdown("### 📒 Nhật ký giao dịch")
-    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    filter_col1, filter_col2 = st.columns(2)
     month_options = ["Tất cả"] + sorted(tx_df["month"].unique().tolist(), reverse=True)
     selected_month = filter_col1.selectbox("Lọc theo tháng", month_options)
     selected_type = filter_col2.selectbox("Lọc theo loại", ["Tất cả", "expense", "income", "transfer"])
-    keyword = filter_col3.text_input("Tìm ghi chú / danh mục")
+    keyword = st.text_input("Tìm ghi chú / danh mục")
 
     view_df = tx_df.copy()
     if selected_month != "Tất cả":
@@ -871,18 +911,21 @@ def render_transactions(uid: int):
             data=csv_data,
             file_name=f"transactions_{uid}.csv",
             mime="text/csv",
-            use_container_width=False,
+            use_container_width=True,
         )
 
     with tab_edit:
         editable_ids = tx_df["id"].tolist()
         edit_id = st.selectbox("Chọn ID cần sửa", editable_ids)
         selected = tx_df[tx_df["id"] == edit_id].iloc[0]
-        tx_type = st.selectbox("Loại", ["expense", "income", "transfer"], index=["expense", "income", "transfer"].index(selected["type"]), key="edit_type")
-        amount = st.number_input("Số tiền", min_value=0.0, value=float(selected["amount"]), step=10000.0, key="edit_amount")
-        tx_date = st.date_input("Ngày", value=selected["date"].date(), key="edit_date")
-        note = st.text_input("Ghi chú", value=selected["note"] or "", key="edit_note")
-        wallet_name = st.selectbox(
+        
+        e_c1, e_c2 = st.columns(2)
+        tx_type = e_c1.selectbox("Loại", ["expense", "income", "transfer"], index=["expense", "income", "transfer"].index(selected["type"]), key="edit_type")
+        amount = e_c2.number_input("Số tiền", min_value=0.0, value=float(selected["amount"]), step=10000.0, key="edit_amount")
+        
+        e_c3, e_c4 = st.columns(2)
+        tx_date = e_c3.date_input("Ngày", value=selected["date"].date(), key="edit_date")
+        wallet_name = e_c4.selectbox(
             "Ví chính",
             list(wallet_map.keys()),
             index=list(wallet_map.values()).index(int(selected["wallet_id"])),
@@ -908,29 +951,23 @@ def render_transactions(uid: int):
             )
             target_wallet_id = wallet_map[target_wallet_label]
 
-        e1, e2 = st.columns(2)
-        if e1.button("💾 Cập nhật giao dịch", type="primary", use_container_width=True):
+        note = st.text_input("Ghi chú", value=selected["note"] or "", key="edit_note")
+
+        btn1, btn2 = st.columns(2)
+        if btn1.button("💾 Cập nhật", type="primary", use_container_width=True):
             if tx_type == "transfer" and wallet_map[wallet_name] == target_wallet_id:
-                st.error("Ví nguồn và ví nhận phải khác nhau.")
+                st.error("Ví nguồn và nhận phải khác nhau.")
             elif amount <= 0:
                 st.warning("Số tiền phải lớn hơn 0.")
             else:
                 update_transaction(
-                    edit_id,
-                    uid,
-                    wallet_map[wallet_name],
-                    category_id,
-                    tx_type,
-                    amount,
-                    tx_date,
-                    note,
-                    target_wallet_id,
+                    edit_id, uid, wallet_map[wallet_name], category_id, tx_type, amount, tx_date, note, target_wallet_id,
                 )
-                st.success("Đã cập nhật giao dịch.")
+                st.success("Đã cập nhật.")
                 st.rerun()
-        if e2.button("🗑️ Xóa giao dịch", use_container_width=True):
+        if btn2.button("🗑️ Xóa", use_container_width=True):
             if delete_transaction(edit_id, uid):
-                st.success("Đã xóa giao dịch và hoàn tác số dư ví.")
+                st.success("Đã xóa và hoàn tác số dư ví.")
                 st.rerun()
             else:
                 st.error("Không tìm thấy giao dịch.")
@@ -942,10 +979,10 @@ def render_wallets_goals(uid: int):
 
     with tab_wallets:
         with st.form("add_wallet_form"):
-            c1, c2, c3 = st.columns([2, 1.2, 1])
-            name = c1.text_input("Tên ví")
-            balance = c2.number_input("Số dư ban đầu", min_value=0.0, step=100000.0)
-            wallet_type = c3.selectbox("Loại", ["bank", "cash", "credit"])
+            name = st.text_input("Tên ví")
+            c1, c2 = st.columns(2)
+            balance = c1.number_input("Số dư ban đầu", min_value=0.0, step=100000.0)
+            wallet_type = c2.selectbox("Loại", ["bank", "cash", "credit"])
             submitted = st.form_submit_button("Tạo ví", type="primary", use_container_width=True)
             if submitted:
                 if not name.strip():
@@ -970,10 +1007,10 @@ def render_wallets_goals(uid: int):
 
     with tab_goals:
         with st.form("goal_form"):
-            c1, c2, c3 = st.columns([2, 1.2, 1.2])
-            goal_name = c1.text_input("Tên mục tiêu")
-            target_amount = c2.number_input("Mục tiêu số tiền", min_value=0.0, step=500000.0)
-            deadline = c3.date_input("Hạn chót", value=date.today())
+            goal_name = st.text_input("Tên mục tiêu")
+            c1, c2 = st.columns(2)
+            target_amount = c1.number_input("Mục tiêu số tiền", min_value=0.0, step=500000.0)
+            deadline = c2.date_input("Hạn chót", value=date.today())
             submitted = st.form_submit_button("Tạo mục tiêu", type="primary", use_container_width=True)
             if submitted:
                 if not goal_name.strip() or target_amount <= 0:
@@ -1000,7 +1037,7 @@ def render_wallets_goals(uid: int):
                         step=50000.0,
                         key=f"goal_fund_{goal['id']}",
                     )
-                    if st.button("Nạp tiền", key=f"goal_btn_{goal['id']}", type="primary"):
+                    if st.button("Nạp tiền", key=f"goal_btn_{goal['id']}", type="primary", use_container_width=True):
                         if amount > 0:
                             fund_goal(int(goal["id"]), amount)
                             st.success("Đã cập nhật quỹ.")
@@ -1027,41 +1064,38 @@ def render_analytics(uid: int):
     total_expense = expense_df["amount"].sum()
     net = total_income - total_expense
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     c1.metric("Tổng thu", money(total_income))
     c2.metric("Tổng chi", money(total_expense))
-    c3.metric("Lãi / lỗ", money(net), delta_color="normal" if net >= 0 else "inverse")
+    st.metric("Lãi / lỗ", money(net), delta_color="normal" if net >= 0 else "inverse")
 
-    left, right = st.columns(2)
-    with left:
-        st.markdown("### Cấu trúc chi tiêu")
-        if not expense_df.empty:
-            pie = px.pie(
-                expense_df.groupby("category_name", dropna=False)["amount"].sum().reset_index(),
-                values="amount",
-                names="category_name",
-                hole=0.5,
-                color_discrete_sequence=px.colors.qualitative.Set3,
-            )
-            pie.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(pie, use_container_width=True)
-        else:
-            st.info("Không có chi tiêu ở kỳ này.")
+    st.markdown("### Cấu trúc chi tiêu")
+    if not expense_df.empty:
+        pie = px.pie(
+            expense_df.groupby("category_name", dropna=False)["amount"].sum().reset_index(),
+            values="amount",
+            names="category_name",
+            hole=0.5,
+            color_discrete_sequence=px.colors.qualitative.Set3,
+        )
+        pie.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(pie, use_container_width=True)
+    else:
+        st.info("Không có chi tiêu ở kỳ này.")
 
-    with right:
-        st.markdown("### Cấu trúc thu nhập")
-        if not income_df.empty:
-            pie = px.pie(
-                income_df.groupby("category_name", dropna=False)["amount"].sum().reset_index(),
-                values="amount",
-                names="category_name",
-                hole=0.5,
-                color_discrete_sequence=px.colors.qualitative.Pastel,
-            )
-            pie.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(pie, use_container_width=True)
-        else:
-            st.info("Không có thu nhập ở kỳ này.")
+    st.markdown("### Cấu trúc thu nhập")
+    if not income_df.empty:
+        pie = px.pie(
+            income_df.groupby("category_name", dropna=False)["amount"].sum().reset_index(),
+            values="amount",
+            names="category_name",
+            hole=0.5,
+            color_discrete_sequence=px.colors.qualitative.Pastel,
+        )
+        pie.update_layout(height=340, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(pie, use_container_width=True)
+    else:
+        st.info("Không có thu nhập ở kỳ này.")
 
     st.markdown("### Dòng tiền theo ngày")
     flow_df = plot_df[plot_df["type"].isin(["income", "expense"])].copy()
@@ -1074,7 +1108,7 @@ def render_analytics(uid: int):
         color="type",
         color_discrete_map={"income": SUCCESS, "expense": DANGER},
     )
-    fig.update_layout(height=360)
+    fig.update_layout(height=320)
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("### Xu hướng tích lũy")
@@ -1083,7 +1117,7 @@ def render_analytics(uid: int):
     trend = line_df.groupby("date")["signed_amount"].sum().sort_index().cumsum().reset_index()
     line = go.Figure()
     line.add_trace(go.Scatter(x=trend["date"], y=trend["signed_amount"], mode="lines+markers", line=dict(color=PRIMARY, width=3)))
-    line.update_layout(height=340, margin=dict(l=10, r=10, t=20, b=10))
+    line.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10))
     st.plotly_chart(line, use_container_width=True)
 
 
@@ -1094,9 +1128,8 @@ def render_settings(uid: int, role: str):
         st.markdown("### 💰 Ngân sách tháng")
         current_month = month_label()
         current_budget = get_budget(uid, current_month)
-        c1, c2 = st.columns([3, 1])
-        new_budget = c1.number_input(f"Ngân sách tháng {current_month}", value=current_budget, min_value=0.0, step=500000.0)
-        if c2.button("Lưu ngân sách", type="primary", use_container_width=True):
+        new_budget = st.number_input(f"Ngân sách tháng {current_month}", value=current_budget, min_value=0.0, step=500000.0)
+        if st.button("Lưu ngân sách", type="primary", use_container_width=True):
             update_budget(uid, current_month, new_budget)
             st.success("Đã cập nhật ngân sách.")
 
@@ -1108,7 +1141,7 @@ def render_settings(uid: int, role: str):
             c1, c2 = st.columns([3, 1])
             name = c1.text_input("Tên danh mục chi")
             icon = c2.text_input("Emoji", value="🏷️")
-            if st.form_submit_button("Thêm danh mục", type="primary"):
+            if st.form_submit_button("Thêm danh mục", type="primary", use_container_width=True):
                 if name.strip():
                     try:
                         add_category(uid, name, "expense", icon)
@@ -1124,7 +1157,7 @@ def render_settings(uid: int, role: str):
             c1, c2 = st.columns([3, 1])
             name = c1.text_input("Tên danh mục thu")
             icon = c2.text_input("Emoji", value="💵")
-            if st.form_submit_button("Thêm danh mục", type="primary"):
+            if st.form_submit_button("Thêm danh mục", type="primary", use_container_width=True):
                 if name.strip():
                     try:
                         add_category(uid, name, "income", icon)
@@ -1140,7 +1173,7 @@ def render_settings(uid: int, role: str):
     with st.expander("Đổi mật khẩu tài khoản hiện tại"):
         with st.form("change_my_password"):
             new_password = st.text_input("Mật khẩu mới", type="password")
-            if st.form_submit_button("Đổi mật khẩu", type="primary"):
+            if st.form_submit_button("Đổi mật khẩu", type="primary", use_container_width=True):
                 if len(new_password) < 6:
                     st.warning("Mật khẩu tối thiểu 6 ký tự.")
                 else:
@@ -1154,14 +1187,13 @@ def render_settings(uid: int, role: str):
         st.dataframe(users_df, use_container_width=True, hide_index=True)
         user_ids = users_df["id"].tolist()
         if user_ids:
-            c1, c2 = st.columns(2)
-            with c1:
+            with st.container(border=True):
                 selected_user = st.selectbox("Chọn user để duyệt", user_ids, format_func=lambda x: f"ID {x} - {users_df[users_df['id']==x].iloc[0]['username']}")
                 if st.button("Duyệt tài khoản", type="primary", use_container_width=True):
                     approve_user(int(selected_user))
                     st.success("Đã duyệt tài khoản.")
                     st.rerun()
-            with c2:
+            with st.container(border=True):
                 selected_reset = st.selectbox("Chọn user để reset mật khẩu", user_ids, format_func=lambda x: f"ID {x} - {users_df[users_df['id']==x].iloc[0]['username']}", key="reset_user_select")
                 admin_new_pw = st.text_input("Mật khẩu mới cho user", type="password", key="admin_new_pw")
                 if st.button("Reset mật khẩu", use_container_width=True):
