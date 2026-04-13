@@ -10,43 +10,109 @@ import app.services as svc
 def inject_css():
     st.markdown(f"""
         <style>
+            /* Ẩn các thành phần thừa của Streamlit */
             #MainMenu, footer, header {{visibility: hidden;}}
-            .stApp {{
-                background: linear-gradient(180deg, #f8fafc 0%, #eef6f6 100%);
-                color: #0f172a;
-            }}
-            .block-container {{ max-width: 1200px; padding: 1rem 1rem 6rem 1rem; }}
-            .hero-card {{
-                background: linear-gradient(135deg, {PRIMARY_COLOR} 0%, #115e59 100%);
-                color: white; border-radius: 16px; padding: 20px;
-                box-shadow: 0 12px 30px rgba(15,118,110,0.15); margin-bottom: 16px;
-            }}
-            .hero-card div:first-child {{ font-size: 1.5rem; font-weight: 800; }}
-            .soft-card {{
-                background: rgba(255,255,255,0.95); border: 1px solid #e2e8f0;
-                border-radius: 16px; padding: 16px; margin-bottom: 12px;
-                box-shadow: 0 4px 15px rgba(15,23,42,0.03);
-            }}
-            div[data-testid="metric-container"] {{
-                border: 1px solid #dbe4ea; border-radius: 16px; padding: 14px;
-                background: #ffffff; box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-            }}
-            .stButton>button {{ border-radius: 12px !important; min-height: 48px; font-weight: bold; }}
-            div[data-testid="stSidebar"] {{ background: #0f172a; }}
-            div[data-testid="stSidebar"] * {{ color: #f8fafc; }}
             
-            /* Floating Button Container */
+            /* Background tổng thể trong trẻo hơn */
+            .stApp {{
+                background-color: #f0fdfa;
+            }}
+            
+            /* Chỉnh lại khung làm việc gọn gàng */
+            .block-container {{ 
+                max-width: 1000px; 
+                padding: 2rem 1rem 6rem 1rem; 
+            }}
+            
+            /* Banner Gradient phía trên */
+            .hero-card {{
+                background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+                color: white; 
+                border-radius: 20px; 
+                padding: 24px;
+                box-shadow: 0 10px 25px -5px rgba(13, 148, 136, 0.4); 
+                margin-bottom: 24px;
+            }}
+            .hero-card div:first-child {{ font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; }}
+            
+            /* Thẻ trắng bo góc mềm mại (Apple Style) */
+            .soft-card {{
+                background: #ffffff; 
+                border: 1px solid #e2e8f0;
+                border-radius: 16px; 
+                padding: 16px; 
+                margin-bottom: 12px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+                transition: transform 0.2s ease;
+            }}
+            .soft-card:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+            }}
+            
+            /* Căn chỉnh lại các hộp hiển thị số tiền */
+            div[data-testid="metric-container"] {{
+                border: none; 
+                border-radius: 16px; 
+                padding: 16px;
+                background: #ffffff; 
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            }}
+            div[data-testid="stMetricValue"] {{ font-weight: 800; color: #0f172a; }}
+            div[data-testid="stMetricLabel"] {{ color: #64748b; font-size: 0.95rem; }}
+            
+            /* Nút bấm to, bo góc lớn, dễ bấm trên mobile */
+            .stButton>button {{ 
+                border-radius: 14px !important; 
+                min-height: 50px; 
+                font-weight: 700; 
+                font-size: 1.05rem;
+                border: 1px solid #e2e8f0 !important;
+                background: #ffffff !important;
+                color: #0f172a !important;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+            }}
+            .stButton>button:hover {{
+                border-color: #0f766e !important;
+                color: #0f766e !important;
+            }}
+            
+            /* Nút bấm chính (Primary Button) */
+            button[kind="primary"] {{
+                background: #0f766e !important;
+                color: #ffffff !important;
+                border: none !important;
+            }}
+            button[kind="primary"]:hover {{
+                background: #0d9488 !important;
+                box-shadow: 0 4px 12px rgba(13,148,136,0.3) !important;
+            }}
+            
+            /* Thanh menu bên trái sáng sủa, sạch sẽ */
+            div[data-testid="stSidebar"] {{ 
+                background: #ffffff; 
+                border-right: 1px solid #e2e8f0;
+            }}
+            div[data-testid="stSidebar"] * {{ color: #1e293b; }}
+            
+            /* Input Form gọn gàng */
+            .stTextInput>div>div>input, .stNumberInput>div>div>input {{
+                border-radius: 10px;
+            }}
+            
+            /* Nút "+" nổi ở góc dưới (Floating Action Button) */
             div[data-testid="stPopover"] {{
-                position: fixed !important; right: 20px !important; bottom: 20px !important; z-index: 999;
+                position: fixed !important; right: 24px !important; bottom: 24px !important; z-index: 999;
             }}
             div[data-testid="stPopover"] > button {{
-                width: 60px !important; height: 60px !important; border-radius: 50% !important;
-                background: linear-gradient(135deg, {SUCCESS_COLOR}, {ACCENT_COLOR}) !important;
-                border: 4px solid #fff !important; box-shadow: 0 10px 20px rgba(20,184,166,0.4) !important;
+                width: 64px !important; height: 64px !important; border-radius: 50% !important;
+                background: #14b8a6 !important;
+                border: 4px solid #fff !important; 
+                box-shadow: 0 10px 25px rgba(20,184,166,0.5) !important;
             }}
             div[data-testid="stPopover"] > button * {{ display: none !important; }}
             div[data-testid="stPopover"] > button::after {{
-                content: "+"; color: white; font-size: 32px; font-weight: 700; line-height: 1;
+                content: "+"; color: white; font-size: 34px; font-weight: 300; line-height: 1.1;
             }}
         </style>
     """, unsafe_allow_html=True)
