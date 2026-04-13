@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Ép hệ thống lùi lại 1 bước ra thư mục gốc để nhận diện thư mục 'app'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import streamlit as st
 from app.config import APP_TITLE
 from app.database import init_db, get_db
