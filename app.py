@@ -1,591 +1,1246 @@
 import os
 import sqlite3
 import hashlib
-from io import BytesIO
 from datetime import datetime, date
+from contextlib import closing
+
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-# ==============================================================================
-# 1. CẤU HÌNH TRANG & CÁC HẰNG SỐ MẶC ĐỊNH
-# ==============================================================================
-st.set_page_config(page_title="FinPro Ultimate", page_icon="💎", layout="wide", initial_sidebar_state="collapsed")
+# =========================================================
+# CONFIG
+# =========================================================
+st.set_page_config(
+    page_title="FinPro Mobile",
+    page_icon="💎",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-DB_PATH = "finpro_ultimate_offline.db"
+DB_PATH = os.getenv("FINPRO_DB_PATH", "finpro_mobile.db")
+APP_TITLE = "💎 FinPro Mobile"
+PRIMARY = "#0f766e"
+ACCENT = "#14b8a6"
+DANGER = "#ef4444"
+WARNING = "#f59e0b"
+SUCCESS = "#10b981"
 
 DEFAULT_CATEGORIES = [
-    ("Ăn uống", "expense", "🍜"), ("Tiền nhà / Điện nước", "expense", "🏠"),
-    ("Di chuyển / Xăng xe", "expense", "⛽"), ("Mua sắm / Quần áo", "expense", "🛍️"),
-    ("Tã & Sữa / Con cái", "expense", "🍼"), ("Sức khỏe / Y tế", "expense", "💊"),
-    ("Giải trí / Du lịch", "expense", "🎬"), ("Giáo dục / Học tập", "expense", "📚"),
-    ("Bảo hiểm / Trả nợ", "expense", "🛡️"), ("Khác (Chi tiêu)", "expense", "📦"),
-    ("Lương", "income", "💰"), ("Thưởng / Lợi nhuận", "income", "🎁"),
-    ("Đầu tư sinh lời", "income", "📈"), ("Thu nhập thụ động", "income", "🛌"),
+    ("Ăn uống", "expense", "🍜"),
+    ("Tiền nhà / Điện nước", "expense", "🏠"),
+    ("Di chuyển / Xăng xe", "expense", "⛽"),
+    ("Mua sắm", "expense", "🛍️"),
+    ("Con cái", "expense", "🍼"),
+    ("Sức khỏe", "expense", "💊"),
+    ("Giải trí", "expense", "🎬"),
+    ("Giáo dục", "expense", "📚"),
+    ("Bảo hiểm / Nợ", "expense", "🛡️"),
+    ("Khác (Chi tiêu)", "expense", "📦"),
+    ("Lương", "income", "💰"),
+    ("Thưởng", "income", "🎁"),
+    ("Kinh doanh", "income", "🏪"),
+    ("Đầu tư", "income", "📈"),
     ("Khác (Thu nhập)", "income", "📥"),
 ]
 
-# ==============================================================================
-# 2. KHỞI TẠO SESSION STATE (BIẾN TẠM)
-# ==============================================================================
-if 'logged_in' not in st.session_state:
-    st.session_state.update({
-        "logged_in": False, "uid": None, "uname": "", "role": "",
-        "draft_expense": {"amount": 0.0, "category": "Ăn uống", "note": ""}
-    })
+DEFAULT_WALLETS = [
+    ("Tiền mặt", 0.0, "cash", 1),
+    ("Tài khoản ngân hàng", 0.0, "bank", 0),
+]
 
-# ==============================================================================
-# 3. CSS ĐỊNH DẠNG GIAO DIỆN (SANG TRỌNG, MOBILE-FIRST, NÚT NỔI)
-# ==============================================================================
-def inject_global_css():
-    st.markdown("""
-    <style>
-    /* Ẩn các thành phần thừa */
-    #MainMenu, header, footer {visibility: hidden;}
-    .stApp { background-color: #f4f7f6; font-family: 'Inter', sans-serif; }
-    
-    /* Canh chỉnh khung chính */
-    .block-container { max-width: 1100px; padding-top: 1.5rem !important; padding-bottom: 7rem !important; }
-    
-    /* Thiết kế thẻ Thống kê (Metric) */
-    div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-        border: 1px solid #e2e8f0; border-radius: 16px; padding: 15px 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.02); transition: transform 0.2s ease;
-    }
-    div[data-testid="metric-container"]:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.08); }
-    
-    /* Làm đẹp các nút bấm */
-    .stButton > button { border-radius: 12px !important; font-weight: 600 !important; transition: all 0.2s ease !important; }
-    .stButton > button:active { transform: scale(0.97) !important; }
-    
-    /* --- NÚT NỔI GHI NHANH Ở GÓC DƯỚI BÊN PHẢI --- */
-    div[data-testid="stPopover"] {
-        position: fixed !important; bottom: 30px !important; right: 30px !important; z-index: 99999 !important;
-    }
-    div[data-testid="stPopover"] > button {
-        width: 65px !important; height: 65px !important; border-radius: 50% !important;
-        background: linear-gradient(135deg, #10b981, #059669) !important; border: 4px solid white !important; 
-        box-shadow: 0 8px 25px rgba(16, 185, 129, 0.5) !important;
-        display: flex !important; align-items: center !important; justify-content: center !important; padding: 0 !important;
-    }
-    div[data-testid="stPopover"] > button:hover { transform: scale(1.1) rotate(90deg) !important; }
-    div[data-testid="stPopover"] > button * { display: none !important; }
-    div[data-testid="stPopover"] > button::after { content: "➕" !important; font-size: 32px !important; color: white !important; }
-    
-    /* Responsive cho Điện thoại */
-    @media (max-width: 768px) {
-        .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
-        div[data-testid="stPopover"] { right: 15px !important; bottom: 20px !important; }
-        div[data-testid="stPopover"] > button { width: 55px !important; height: 55px !important; }
-        div[data-testid="stPopover"] > button::after { font-size: 26px !important; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# seed account requested by user
+SEED_USERS = [
+    ("admin", "admin123", "admin", 1),
+    ("duc1", "123456", "admin", 1),
+]
 
-# ==============================================================================
-# 4. DATABASE & LÕI XỬ LÝ (CORE LOGIC)
-# ==============================================================================
+# =========================================================
+# UI / STYLE
+# =========================================================
+def inject_css():
+    st.markdown(
+        f"""
+        <style>
+            #MainMenu, footer, header {{visibility: hidden;}}
+            .stApp {{
+                background:
+                    radial-gradient(circle at top left, rgba(20,184,166,0.10), transparent 25%),
+                    linear-gradient(180deg, #f8fafc 0%, #eef6f6 100%);
+                color: #0f172a;
+            }}
+            .block-container {{
+                max-width: 1200px;
+                padding-top: 1.1rem;
+                padding-bottom: 8rem;
+            }}
+            .hero-card {{
+                background: linear-gradient(135deg, {PRIMARY} 0%, #115e59 100%);
+                color: white;
+                border-radius: 24px;
+                padding: 22px 24px;
+                box-shadow: 0 18px 40px rgba(15,118,110,0.20);
+                margin-bottom: 16px;
+            }}
+            .soft-card {{
+                background: rgba(255,255,255,0.88);
+                border: 1px solid #e2e8f0;
+                border-radius: 18px;
+                padding: 16px;
+                box-shadow: 0 8px 30px rgba(15,23,42,0.05);
+            }}
+            div[data-testid="metric-container"] {{
+                border: 1px solid #dbe4ea;
+                border-radius: 18px;
+                padding: 14px 18px;
+                background: rgba(255,255,255,0.95);
+                box-shadow: 0 8px 24px rgba(15,23,42,0.05);
+            }}
+            .stButton>button, .stDownloadButton>button {{
+                border-radius: 12px !important;
+                border: none !important;
+                font-weight: 700 !important;
+            }}
+            .chip {{
+                display: inline-block;
+                padding: 6px 10px;
+                background: #ecfeff;
+                color: {PRIMARY};
+                border-radius: 999px;
+                font-size: 12px;
+                font-weight: 700;
+                margin-right: 8px;
+                margin-bottom: 8px;
+                border: 1px solid #ccfbf1;
+            }}
+            .danger-text {{ color: {DANGER}; font-weight: 700; }}
+            .success-text {{ color: {SUCCESS}; font-weight: 700; }}
+            div[data-testid="stSidebar"] {{
+                background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+            }}
+            div[data-testid="stSidebar"] * {{ color: #f8fafc; }}
+            div[data-testid="stPopover"] {{
+                position: fixed !important;
+                right: 22px !important;
+                bottom: 20px !important;
+                z-index: 999999 !important;
+            }}
+            div[data-testid="stPopover"] > button {{
+                width: 62px !important;
+                height: 62px !important;
+                border-radius: 999px !important;
+                background: linear-gradient(135deg, {SUCCESS}, {ACCENT}) !important;
+                box-shadow: 0 15px 30px rgba(20,184,166,.35) !important;
+                border: 4px solid #ffffff !important;
+            }}
+            div[data-testid="stPopover"] > button * {{ display: none !important; }}
+            div[data-testid="stPopover"] > button::after {{
+                content: "+";
+                color: white;
+                font-size: 34px;
+                font-weight: 700;
+            }}
+            @media (max-width: 768px) {{
+                .block-container {{
+                    padding-left: 1rem;
+                    padding-right: 1rem;
+                }}
+                div[data-testid="stHorizontalBlock"] {{ gap: 0.7rem; }}
+                div[data-testid="stPopover"] > button {{ width: 56px !important; height: 56px !important; }}
+            }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def page_header(title: str, subtitle: str):
+    st.markdown(
+        f"""
+        <div class="hero-card">
+            <div style="font-size: 1.9rem; font-weight: 900;">{title}</div>
+            <div style="opacity: .9; margin-top: 6px; font-size: 1rem;">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# =========================================================
+# DB
+# =========================================================
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.row_factory = sqlite3.Row
     return conn
 
-def hash_pw(pw: str): return hashlib.sha256(pw.encode()).hexdigest()
+
+def hash_pw(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
 
 def init_db():
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', is_approved INTEGER NOT NULL DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, icon TEXT, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS wallets (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0.0, type TEXT DEFAULT 'bank', is_default INTEGER DEFAULT 0, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, wallet_id INTEGER NOT NULL, category_id INTEGER, type TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, note TEXT, target_wallet_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(wallet_id) REFERENCES wallets(id), FOREIGN KEY(category_id) REFERENCES categories(id))""")
-    c.execute("""CREATE TABLE IF NOT EXISTS budgets (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, month TEXT NOT NULL, amount REAL NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, UNIQUE(user_id, month))""")
-    c.execute("""CREATE TABLE IF NOT EXISTS goals (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, target_amount REAL NOT NULL, current_amount REAL NOT NULL DEFAULT 0.0, deadline TEXT, status TEXT DEFAULT 'active', FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)""")
-    
-    # Tạo sẵn Admin
-    if not c.execute("SELECT 1 FROM users WHERE username='admin'").fetchone():
-        c.execute("INSERT INTO users (username, password, role, is_approved) VALUES (?, ?, 'admin', 1)", ('admin', hash_pw('admin123')))
-    if not c.execute("SELECT 1 FROM users WHERE username='ducpro'").fetchone():
-        c.execute("INSERT INTO users (username, password, role, is_approved) VALUES (?, ?, 'admin', 1)", ('ducpro', hash_pw('234766')))
-    conn.commit(); conn.close()
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                is_approved INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL CHECK(type IN ('income','expense')),
+                icon TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, name, type),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wallets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                balance REAL NOT NULL DEFAULT 0,
+                type TEXT NOT NULL DEFAULT 'bank',
+                is_default INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS budgets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                month TEXT NOT NULL,
+                amount REAL NOT NULL DEFAULT 0,
+                UNIQUE(user_id, month),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                target_amount REAL NOT NULL,
+                current_amount REAL NOT NULL DEFAULT 0,
+                deadline TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                wallet_id INTEGER NOT NULL,
+                category_id INTEGER,
+                type TEXT NOT NULL CHECK(type IN ('income','expense','transfer')),
+                amount REAL NOT NULL CHECK(amount >= 0),
+                date TEXT NOT NULL,
+                note TEXT,
+                target_wallet_id INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(wallet_id) REFERENCES wallets(id),
+                FOREIGN KEY(target_wallet_id) REFERENCES wallets(id),
+                FOREIGN KEY(category_id) REFERENCES categories(id)
+            )
+            """
+        )
 
-def setup_new_user(user_id):
-    conn = get_conn()
-    c = conn.cursor()
-    for name, c_type, icon in DEFAULT_CATEGORIES:
-        c.execute("INSERT INTO categories (user_id, name, type, icon) VALUES (?, ?, ?, ?)", (user_id, name, c_type, icon))
-    c.execute("INSERT INTO wallets (user_id, name, balance, type, is_default) VALUES (?, ?, ?, ?, ?)", (user_id, "Tiền mặt", 0.0, "cash", 1))
-    c.execute("INSERT INTO wallets (user_id, name, balance, type) VALUES (?, ?, ?, ?)", (user_id, "Tài khoản Ngân hàng", 0.0, "bank"))
-    c.execute("INSERT INTO budgets (user_id, month, amount) VALUES (?, ?, ?)", (user_id, datetime.now().strftime("%Y-%m"), 0.0))
-    conn.commit(); conn.close()
+        for username, password, role, approved in SEED_USERS:
+            row = cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if not row:
+                cur.execute(
+                    "INSERT INTO users (username, password, role, is_approved) VALUES (?, ?, ?, ?)",
+                    (username, hash_pw(password), role, approved),
+                )
+                user_id = cur.lastrowid
+                seed_user_data(conn, user_id)
 
-def auth_user(username, password):
-    conn = get_conn()
-    user = conn.execute("SELECT id, username, role, is_approved FROM users WHERE username=? AND password=?", (username.strip(), hash_pw(password))).fetchone()
-    conn.close()
-    return user
+        conn.commit()
 
-def register_user(username, password):
-    conn = get_conn()
-    try:
-        c = conn.cursor()
-        c.execute("INSERT INTO users (username, password, role, is_approved) VALUES (?, ?, 'user', 0)", (username.strip(), hash_pw(password)))
-        setup_new_user(c.lastrowid)
-        conn.commit(); conn.close(); return True
-    except:
-        conn.close(); return False
 
-# --- CÁC HÀM TRUY VẤN (READ) ---
-def get_wallets(uid):
-    conn = get_conn()
-    df = pd.read_sql_query("SELECT * FROM wallets WHERE user_id=? ORDER BY is_default DESC, id ASC", conn, params=(uid,))
-    conn.close(); return df
+def seed_user_data(conn, user_id: int):
+    cur = conn.cursor()
+    for name, cat_type, icon in DEFAULT_CATEGORIES:
+        cur.execute(
+            "INSERT OR IGNORE INTO categories (user_id, name, type, icon) VALUES (?, ?, ?, ?)",
+            (user_id, name, cat_type, icon),
+        )
+    for name, balance, wallet_type, is_default in DEFAULT_WALLETS:
+        cur.execute(
+            "INSERT INTO wallets (user_id, name, balance, type, is_default) VALUES (?, ?, ?, ?, ?)",
+            (user_id, name, balance, wallet_type, is_default),
+        )
+    month = datetime.now().strftime("%Y-%m")
+    cur.execute(
+        "INSERT OR IGNORE INTO budgets (user_id, month, amount) VALUES (?, ?, 0)",
+        (user_id, month),
+    )
 
-def get_categories(uid, c_type=None):
-    conn = get_conn()
-    q = "SELECT * FROM categories WHERE user_id=?"
-    p = [uid]
-    if c_type: q += " AND type=?"; p.append(c_type)
-    df = pd.read_sql_query(q, conn, params=tuple(p))
-    conn.close(); return df
 
-def get_total_budget(uid, month):
-    conn = get_conn()
-    row = conn.execute("SELECT amount FROM budgets WHERE user_id=? AND month=?", (uid, month)).fetchone()
-    conn.close()
-    return float(row[0]) if row else 0.0
+# =========================================================
+# HELPERS
+# =========================================================
+def ensure_session_state():
+    defaults = {
+        "logged_in": False,
+        "uid": None,
+        "username": "",
+        "role": "",
+        "editing_txn_id": None,
+        "active_page": "🏠 Tổng quan",
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-def get_transactions_df(uid, month=None):
-    conn = get_conn()
-    q = """SELECT t.id, t.date, t.type, t.amount, t.note, w.name as wallet_name, c.name as cat_name, c.icon as cat_icon, t.target_wallet_id 
-           FROM transactions t LEFT JOIN wallets w ON t.wallet_id = w.id LEFT JOIN categories c ON t.category_id = c.id WHERE t.user_id = ?"""
-    p = [uid]
-    if month: q += " AND strftime('%Y-%m', t.date) = ?"; p.append(month)
-    q += " ORDER BY t.date DESC, t.id DESC"
-    df = pd.read_sql_query(q, conn, params=tuple(p))
-    conn.close()
+
+def money(value: float) -> str:
+    return f"{value:,.0f} ₫".replace(",", ".")
+
+
+def month_label() -> str:
+    return datetime.now().strftime("%Y-%m")
+
+
+def to_dataframe(query: str, params=()):
+    with closing(get_conn()) as conn:
+        return pd.read_sql_query(query, conn, params=params)
+
+
+def auth_user(username: str, password: str):
+    with closing(get_conn()) as conn:
+        return conn.execute(
+            "SELECT id, username, role, is_approved FROM users WHERE username=? AND password=?",
+            (username.strip(), hash_pw(password)),
+        ).fetchone()
+
+
+def register_user(username: str, password: str):
+    username = username.strip()
+    if len(username) < 3 or len(password) < 6:
+        return False, "Tên đăng nhập tối thiểu 3 ký tự, mật khẩu tối thiểu 6 ký tự."
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO users (username, password, role, is_approved) VALUES (?, ?, 'user', 1)",
+                (username, hash_pw(password)),
+            )
+            seed_user_data(conn, cur.lastrowid)
+            conn.commit()
+            return True, "Tạo tài khoản thành công."
+        except sqlite3.IntegrityError:
+            return False, "Tên đăng nhập đã tồn tại."
+
+
+def get_wallets(uid: int):
+    return to_dataframe(
+        "SELECT * FROM wallets WHERE user_id=? ORDER BY is_default DESC, id ASC", (uid,)
+    )
+
+
+def get_categories(uid: int, cat_type: str | None = None):
+    if cat_type:
+        return to_dataframe(
+            "SELECT * FROM categories WHERE user_id=? AND type=? ORDER BY name ASC",
+            (uid, cat_type),
+        )
+    return to_dataframe("SELECT * FROM categories WHERE user_id=? ORDER BY type, name", (uid,))
+
+
+def get_budget(uid: int, month: str):
+    with closing(get_conn()) as conn:
+        row = conn.execute(
+            "SELECT amount FROM budgets WHERE user_id=? AND month=?", (uid, month)
+        ).fetchone()
+        return float(row[0]) if row else 0.0
+
+
+def get_goals(uid: int):
+    return to_dataframe(
+        "SELECT * FROM goals WHERE user_id=? ORDER BY status ASC, deadline ASC, id DESC", (uid,)
+    )
+
+
+def get_transactions(uid: int):
+    query = """
+        SELECT
+            t.id, t.user_id, t.wallet_id, t.category_id, t.type, t.amount, t.date, t.note,
+            t.target_wallet_id, t.created_at, t.updated_at,
+            w.name AS wallet_name,
+            tw.name AS target_wallet_name,
+            c.name AS category_name,
+            c.icon AS category_icon
+        FROM transactions t
+        LEFT JOIN wallets w ON t.wallet_id = w.id
+        LEFT JOIN wallets tw ON t.target_wallet_id = tw.id
+        LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.user_id = ?
+        ORDER BY date DESC, id DESC
+    """
+    df = to_dataframe(query, (uid,))
     if not df.empty:
-        df['date'] = pd.to_datetime(df['date'])
-        df['month'] = df['date'].dt.strftime('%Y-%m')
+        df["date"] = pd.to_datetime(df["date"])
+        df["month"] = df["date"].dt.strftime("%Y-%m")
     return df
 
-def get_goals(uid):
-    conn = get_conn()
-    df = pd.read_sql_query("SELECT * FROM goals WHERE user_id=? ORDER BY status DESC, deadline ASC", conn, params=(uid,))
-    conn.close(); return df
 
-def get_last_price(uid, keyword):
-    conn = get_conn()
-    row = conn.execute("SELECT amount FROM transactions WHERE user_id=? AND note LIKE ? AND type='expense' ORDER BY date DESC LIMIT 1", (uid, f"%{keyword}%")).fetchone()
-    conn.close()
-    return float(row[0]) if row else 0.0
+def add_wallet(uid: int, name: str, balance: float, wallet_type: str):
+    with closing(get_conn()) as conn:
+        conn.execute(
+            "INSERT INTO wallets (user_id, name, balance, type) VALUES (?, ?, ?, ?)",
+            (uid, name.strip(), balance, wallet_type),
+        )
+        conn.commit()
 
-# --- CÁC HÀM THỰC THI (WRITE) ---
-def execute_transaction(uid, w_id, cat_id, t_type, amount, t_date, note, target_w_id=None):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("INSERT INTO transactions (user_id, wallet_id, category_id, type, amount, date, note, target_wallet_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (uid, w_id, cat_id, t_type, amount, str(t_date), note, target_w_id))
-    if t_type == "income": c.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (amount, w_id))
-    elif t_type == "expense": c.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (amount, w_id))
-    elif t_type == "transfer":
-        c.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (amount, w_id))
-        if target_w_id: c.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (amount, target_w_id))
-    conn.commit(); conn.close()
 
-def delete_transaction(txn_id, uid):
-    conn = get_conn()
-    c = conn.cursor()
-    txn = c.execute("SELECT wallet_id, type, amount, target_wallet_id FROM transactions WHERE id=? AND user_id=?", (txn_id, uid)).fetchone()
-    if txn:
-        w_id, t_type, amt, tw_id = txn
-        c.execute("DELETE FROM transactions WHERE id=?", (txn_id,))
-        if t_type == 'income': c.execute("UPDATE wallets SET balance = balance - ? WHERE id=?", (amt, w_id))
-        elif t_type == 'expense': c.execute("UPDATE wallets SET balance = balance + ? WHERE id=?", (amt, w_id))
-        elif t_type == 'transfer':
-            c.execute("UPDATE wallets SET balance = balance + ? WHERE id=?", (amt, w_id))
-            if tw_id: c.execute("UPDATE wallets SET balance = balance - ? WHERE id=?", (amt, tw_id))
-        conn.commit(); conn.close(); return True
-    conn.close(); return False
+def add_category(uid: int, name: str, cat_type: str, icon: str):
+    with closing(get_conn()) as conn:
+        conn.execute(
+            "INSERT INTO categories (user_id, name, type, icon) VALUES (?, ?, ?, ?)",
+            (uid, name.strip(), cat_type, icon.strip() or "🏷️"),
+        )
+        conn.commit()
 
-def update_budget(uid, month, amount):
-    conn = get_conn()
-    conn.execute("INSERT INTO budgets (user_id, month, amount) VALUES (?, ?, ?) ON CONFLICT(user_id, month) DO UPDATE SET amount=excluded.amount", (uid, month, amount))
-    conn.commit(); conn.close()
 
-def add_goal(uid, name, target_amount, deadline):
-    conn = get_conn()
-    conn.execute("INSERT INTO goals (user_id, name, target_amount, deadline) VALUES (?, ?, ?, ?)", (uid, name, target_amount, str(deadline)))
-    conn.commit(); conn.close()
+def update_budget(uid: int, month: str, amount: float):
+    with closing(get_conn()) as conn:
+        conn.execute(
+            """
+            INSERT INTO budgets (user_id, month, amount) VALUES (?, ?, ?)
+            ON CONFLICT(user_id, month) DO UPDATE SET amount = excluded.amount
+            """,
+            (uid, month, amount),
+        )
+        conn.commit()
 
-def fund_goal(goal_id, amount):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("UPDATE goals SET current_amount = current_amount + ? WHERE id=?", (amount, goal_id))
-    g = c.execute("SELECT current_amount, target_amount FROM goals WHERE id=?", (goal_id,)).fetchone()
-    if g and g[0] >= g[1]: c.execute("UPDATE goals SET status='completed' WHERE id=?", (goal_id,))
-    conn.commit(); conn.close()
 
-def add_wallet(uid, name, balance, w_type):
-    conn = get_conn()
-    conn.execute("INSERT INTO wallets (user_id, name, balance, type) VALUES (?, ?, ?, ?)", (uid, name, balance, w_type))
-    conn.commit(); conn.close()
+def add_goal(uid: int, name: str, target_amount: float, deadline):
+    with closing(get_conn()) as conn:
+        conn.execute(
+            "INSERT INTO goals (user_id, name, target_amount, deadline) VALUES (?, ?, ?, ?)",
+            (uid, name.strip(), target_amount, str(deadline)),
+        )
+        conn.commit()
 
-def fmt_money(value): return f"{value:,.0f} ₫".replace(",", ".")
 
-# ==============================================================================
-# 5. CÁC MÀN HÌNH GIAO DIỆN (PAGES)
-# ==============================================================================
+def fund_goal(goal_id: int, amount: float):
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE goals SET current_amount = current_amount + ? WHERE id=?", (amount, goal_id))
+        row = cur.execute("SELECT current_amount, target_amount FROM goals WHERE id=?", (goal_id,)).fetchone()
+        if row and row[0] >= row[1]:
+            cur.execute("UPDATE goals SET status='completed' WHERE id=?", (goal_id,))
+        conn.commit()
 
-# --- A. ĐĂNG NHẬP / ĐĂNG KÝ ---
-def page_auth():
-    st.markdown("""<div style='text-align:center; padding: 3rem 0 1rem 0;'><h1 style='color:#059669; font-size: 3.5rem; font-weight: 900; margin-bottom: 0;'>💎 FinPro Ultimate</h1><p style='color:#64748b; font-size: 1.2rem;'>Hệ Sinh Thái Quản Lý Tài Chính & Dòng Tiền</p></div>""", unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 1.5, 1])
-    with col:
-        t1, t2 = st.tabs(["🔐 Đăng Nhập", "📝 Tạo Tài Khoản"])
-        with t1:
+
+def create_transaction(uid: int, wallet_id: int, category_id: int | None, tx_type: str, amount: float, tx_date, note: str, target_wallet_id: int | None = None):
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO transactions (user_id, wallet_id, category_id, type, amount, date, note, target_wallet_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (uid, wallet_id, category_id, tx_type, amount, str(tx_date), note.strip(), target_wallet_id),
+        )
+        apply_wallet_impact(cur, wallet_id, target_wallet_id, tx_type, amount, mode="apply")
+        conn.commit()
+
+
+def apply_wallet_impact(cur, wallet_id: int, target_wallet_id: int | None, tx_type: str, amount: float, mode: str):
+    factor = 1 if mode == "apply" else -1
+    if tx_type == "income":
+        cur.execute("UPDATE wallets SET balance = balance + ? WHERE id=?", (amount * factor, wallet_id))
+    elif tx_type == "expense":
+        cur.execute("UPDATE wallets SET balance = balance - ? WHERE id=?", (amount * factor, wallet_id))
+    elif tx_type == "transfer":
+        cur.execute("UPDATE wallets SET balance = balance - ? WHERE id=?", (amount * factor, wallet_id))
+        if target_wallet_id:
+            cur.execute("UPDATE wallets SET balance = balance + ? WHERE id=?", (amount * factor, target_wallet_id))
+
+
+def delete_transaction(tx_id: int, uid: int):
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        row = cur.execute(
+            "SELECT wallet_id, target_wallet_id, type, amount FROM transactions WHERE id=? AND user_id=?",
+            (tx_id, uid),
+        ).fetchone()
+        if not row:
+            return False
+        apply_wallet_impact(cur, row[0], row[1], row[2], row[3], mode="revert")
+        cur.execute("DELETE FROM transactions WHERE id=? AND user_id=?", (tx_id, uid))
+        conn.commit()
+        return True
+
+
+def update_transaction(tx_id: int, uid: int, wallet_id: int, category_id: int | None, tx_type: str, amount: float, tx_date, note: str, target_wallet_id: int | None = None):
+    with closing(get_conn()) as conn:
+        cur = conn.cursor()
+        old = cur.execute(
+            "SELECT wallet_id, target_wallet_id, type, amount FROM transactions WHERE id=? AND user_id=?",
+            (tx_id, uid),
+        ).fetchone()
+        if not old:
+            return False
+        apply_wallet_impact(cur, old[0], old[1], old[2], old[3], mode="revert")
+        cur.execute(
+            """
+            UPDATE transactions
+            SET wallet_id=?, category_id=?, type=?, amount=?, date=?, note=?, target_wallet_id=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND user_id=?
+            """,
+            (wallet_id, category_id, tx_type, amount, str(tx_date), note.strip(), target_wallet_id, tx_id, uid),
+        )
+        apply_wallet_impact(cur, wallet_id, target_wallet_id, tx_type, amount, mode="apply")
+        conn.commit()
+        return True
+
+
+def approve_user(user_id: int):
+    with closing(get_conn()) as conn:
+        conn.execute("UPDATE users SET is_approved=1 WHERE id=?", (user_id,))
+        conn.commit()
+
+
+def reset_user_password(user_id: int, new_password: str):
+    with closing(get_conn()) as conn:
+        conn.execute("UPDATE users SET password=? WHERE id=?", (hash_pw(new_password), user_id))
+        conn.commit()
+
+
+def get_users_admin_view():
+    return to_dataframe(
+        "SELECT id, username, role, is_approved, created_at FROM users ORDER BY created_at DESC"
+    )
+
+
+# =========================================================
+# BUSINESS METRICS
+# =========================================================
+def build_summary(uid: int):
+    tx = get_transactions(uid)
+    wallets = get_wallets(uid)
+    current_month = month_label()
+    month_df = tx[tx["month"] == current_month] if not tx.empty else pd.DataFrame()
+    total_assets = wallets["balance"].sum() if not wallets.empty else 0.0
+    month_income = month_df.loc[month_df["type"] == "income", "amount"].sum() if not month_df.empty else 0.0
+    month_expense = month_df.loc[month_df["type"] == "expense", "amount"].sum() if not month_df.empty else 0.0
+    budget = get_budget(uid, current_month)
+    balance = month_income - month_expense
+    return {
+        "tx": tx,
+        "wallets": wallets,
+        "month_df": month_df,
+        "total_assets": float(total_assets),
+        "month_income": float(month_income),
+        "month_expense": float(month_expense),
+        "budget": float(budget),
+        "balance": float(balance),
+    }
+
+
+def export_transactions_csv(df: pd.DataFrame):
+    if df.empty:
+        return b""
+    export_df = df.copy()
+    export_df["date"] = export_df["date"].astype(str)
+    return export_df.to_csv(index=False).encode("utf-8-sig")
+
+
+# =========================================================
+# AUTH PAGE
+# =========================================================
+def render_auth_page():
+    page_header(APP_TITLE, "Ứng dụng quản lý chi tiêu tối ưu cho điện thoại, tablet và desktop.")
+    st.info("Tài khoản mẫu đã được tạo sẵn: **duc1 / 123456**")
+    left, center, right = st.columns([1, 1.5, 1])
+    with center:
+        tab_login, tab_register = st.tabs(["🔐 Đăng nhập", "📝 Đăng ký"])
+        with tab_login:
             with st.container(border=True):
                 with st.form("login_form"):
-                    u = st.text_input("Tên đăng nhập")
-                    p = st.text_input("Mật khẩu", type="password")
-                    if st.form_submit_button("Vào Hệ Thống 🚀", type="primary", use_container_width=True):
-                        user = auth_user(u, p)
-                        if not user: st.error("❌ Thông tin không chính xác!")
-                        elif user[3] == 0: st.warning("⏳ Tài khoản đang chờ Admin duyệt.")
-                        else: st.session_state.update({"logged_in": True, "uid": user[0], "uname": user[1], "role": user[2]}); st.rerun()
-        with t2:
+                    username = st.text_input("Tên đăng nhập")
+                    password = st.text_input("Mật khẩu", type="password")
+                    submitted = st.form_submit_button("Vào hệ thống", type="primary", use_container_width=True)
+                    if submitted:
+                        user = auth_user(username, password)
+                        if not user:
+                            st.error("Sai tài khoản hoặc mật khẩu.")
+                        elif user[3] == 0:
+                            st.warning("Tài khoản chưa được duyệt.")
+                        else:
+                            st.session_state.logged_in = True
+                            st.session_state.uid = user[0]
+                            st.session_state.username = user[1]
+                            st.session_state.role = user[2]
+                            st.rerun()
+        with tab_register:
             with st.container(border=True):
-                st.info("Dữ liệu của bạn được lưu trữ hoàn toàn riêng biệt và bảo mật.")
-                with st.form("reg_form"):
-                    nu = st.text_input("Tên đăng nhập mới")
-                    np = st.text_input("Mật khẩu", type="password")
-                    if st.form_submit_button("Đăng Ký Miễn Phí", use_container_width=True):
-                        if nu and np:
-                            if register_user(nu, np): st.success("🎉 Thành công! Chờ Admin duyệt nhé.")
-                            else: st.error("⚠️ Tên đăng nhập đã tồn tại.")
-                        else: st.warning("Vui lòng điền đủ thông tin.")
+                with st.form("register_form"):
+                    new_user = st.text_input("Tên đăng nhập mới")
+                    new_password = st.text_input("Mật khẩu mới", type="password")
+                    submitted = st.form_submit_button("Tạo tài khoản", use_container_width=True)
+                    if submitted:
+                        ok, msg = register_user(new_user, new_password)
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
 
-# --- B. DASHBOARD (TỔNG QUAN) ---
-def page_dashboard(uid):
-    st.markdown("<h2>🏠 Tổng Quan Tài Chính</h2>", unsafe_allow_html=True)
-    cm = datetime.now().strftime("%Y-%m")
-    budget = get_total_budget(uid, cm)
-    wallets = get_wallets(uid)
-    txns = get_transactions_df(uid, cm)
-    
-    total_assets = wallets['balance'].sum() if not wallets.empty else 0.0
-    spent = txns[txns['type'] == 'expense']['amount'].sum() if not txns.empty else 0.0
-    income = txns[txns['type'] == 'income']['amount'].sum() if not txns.empty else 0.0
-    
-    m1, m2, m3 = st.columns(3)
-    m1.metric("💰 Tổng Tài Sản", fmt_money(total_assets))
-    m2.metric("📥 Thu Nhập Tháng", fmt_money(income))
-    m3.metric("💸 Đã Chi Tiêu", fmt_money(spent), f"Ngân sách: {fmt_money(budget)}", delta_color="off")
-    
+
+# =========================================================
+# PAGES
+# =========================================================
+def render_dashboard(uid: int):
+    data = build_summary(uid)
+    tx = data["tx"]
+    wallets = data["wallets"]
+    month_df = data["month_df"]
+    page_header("🏠 Tổng quan tài chính", "Theo dõi tài sản, ngân sách và dòng tiền mỗi ngày.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Tổng tài sản", money(data["total_assets"]))
+    c2.metric("Thu nhập tháng", money(data["month_income"]))
+    c3.metric("Chi tiêu tháng", money(data["month_expense"]))
+    c4.metric("Chênh lệch tháng", money(data["balance"]))
+
+    budget = data["budget"]
+    spent = data["month_expense"]
     if budget > 0:
-        prog = min(spent/budget, 1.0)
-        st.progress(prog)
-        rem = budget - spent
-        if rem < 0: st.error(f"⚠️ Vượt ngân sách {fmt_money(abs(rem))}!")
-        elif rem < budget * 0.2: st.warning(f"⚠️ Sắp cạn ngân sách. Chỉ còn {fmt_money(rem)}.")
-        else: st.success(f"✅ An toàn. Còn lại {fmt_money(rem)}.")
-    else: st.info("💡 Bạn chưa thiết lập Ngân sách tháng này.")
+        ratio = min(spent / budget, 1.0)
+        st.progress(ratio)
+        remain = budget - spent
+        if remain < 0:
+            st.error(f"Bạn đã vượt ngân sách {money(abs(remain))}.")
+        elif remain <= budget * 0.2:
+            st.warning(f"Bạn còn {money(remain)} trước khi chạm ngưỡng ngân sách.")
+        else:
+            st.success(f"Ngân sách còn lại: {money(remain)}")
+    else:
+        st.info("Bạn chưa đặt ngân sách cho tháng hiện tại.")
 
-    st.markdown("---")
-    col_w, col_c = st.columns([1.5, 2])
-    with col_w:
-        st.markdown("#### 💼 Quản lý Ví của bạn")
-        if not wallets.empty:
-            for _, w in wallets.iterrows():
-                ic = "🏦" if w['type']=='bank' else "💳" if w['type']=='credit' else "💵"
-                st.markdown(f"<div style='padding: 15px; border: 1px solid #e1e4e8; border-radius: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; background: white;'><span>{ic} <b>{w['name']}</b></span><span style='color: #059669; font-weight: 700;'>{fmt_money(w['balance'])}</span></div>", unsafe_allow_html=True)
-        else: st.warning("Bạn chưa có Ví nào.")
-                
-    with col_c:
-        st.markdown("#### 📊 Cơ cấu Chi Tiêu Tháng Này")
-        if not txns.empty and spent > 0:
-            exp_df = txns[txns['type'] == 'expense']
-            cat_sum = exp_df.groupby('cat_name')['amount'].sum().reset_index()
-            fig = px.pie(cat_sum, values='amount', names='cat_name', hole=0.5)
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-            fig.update_layout(margin=dict(t=10,b=10,l=10,r=10), height=300)
+    left, right = st.columns([1.1, 1.4])
+    with left:
+        st.markdown("### 💼 Ví hiện có")
+        if wallets.empty:
+            st.info("Chưa có ví.")
+        else:
+            for _, wallet in wallets.iterrows():
+                icon = "🏦" if wallet["type"] == "bank" else "💵" if wallet["type"] == "cash" else "💳"
+                st.markdown(
+                    f"""
+                    <div class="soft-card" style="margin-bottom: 10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div><strong>{icon} {wallet['name']}</strong><br><span style="color:#64748b; font-size: 13px;">{wallet['type']}</span></div>
+                            <div style="font-weight:800; color:{PRIMARY};">{money(wallet['balance'])}</div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        if not month_df.empty:
+            recent = month_df.head(5).copy()
+            recent["display"] = recent.apply(
+                lambda r: (
+                    f"🔴 -{money(r['amount'])}" if r["type"] == "expense" else
+                    f"🟢 +{money(r['amount'])}" if r["type"] == "income" else
+                    f"🔄 {money(r['amount'])}"
+                ),
+                axis=1,
+            )
+            st.markdown("### 🕒 Gần đây")
+            st.dataframe(
+                recent[["date", "wallet_name", "category_name", "display", "note"]].rename(
+                    columns={
+                        "date": "Ngày",
+                        "wallet_name": "Ví",
+                        "category_name": "Danh mục",
+                        "display": "Số tiền",
+                        "note": "Ghi chú",
+                    }
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    with right:
+        st.markdown("### 📊 Cơ cấu chi tiêu tháng")
+        exp_df = month_df[month_df["type"] == "expense"] if not month_df.empty else pd.DataFrame()
+        if not exp_df.empty:
+            pie_df = exp_df.groupby("category_name", dropna=False)["amount"].sum().reset_index()
+            fig = px.pie(
+                pie_df,
+                values="amount",
+                names="category_name",
+                hole=0.58,
+                color_discrete_sequence=px.colors.sequential.Tealgrn,
+            )
+            fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
-        else: st.info("Chưa có khoản chi nào.")
+        else:
+            st.info("Chưa có dữ liệu chi tiêu trong tháng.")
 
-# --- C. GIAO DỊCH (TRANSACTIONS) ---
-def page_transactions(uid):
-    st.markdown("<h2>📝 Quản lý Giao Dịch</h2>", unsafe_allow_html=True)
-    w_df = get_wallets(uid)
-    if w_df.empty: st.error("⚠️ Hãy vào mục 'Ví & Quỹ' tạo Ví trước khi ghi chép!"); return
-    w_dict = {r['name']: r['id'] for _, r in w_df.iterrows()}
-    
-    with st.expander("➕ GHI CHÉP GIAO DỊCH MỚI", expanded=True):
-        t1, t2, t3 = st.tabs(["💸 Chi Tiền", "💰 Thu Nhập", "🔄 Chuyển Khoản"])
-        
-        with t1:
-            with st.form("f_exp", clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                amt = c1.number_input("Số tiền chi (₫)", min_value=0.0, step=10000.0)
-                cats = get_categories(uid, 'expense')
-                cat_d = {f"{r['icon']} {r['name']}": r['id'] for _, r in cats.iterrows()}
-                cat_id = c2.selectbox("Mục chi tiêu", list(cat_d.keys()))
-                c3, c4, c5 = st.columns([1.5, 2, 1])
-                w_id = c3.selectbox("Nguồn tiền", list(w_dict.keys()))
-                note = c4.text_input("Ghi chú", placeholder="Vd: Tiền điện")
-                d = c5.date_input("Ngày", value=date.today())
-                if st.form_submit_button("Lưu Khoản Chi 💾", type="primary", use_container_width=True):
-                    if amt > 0: execute_transaction(uid, w_dict[w_id], cat_d[cat_id], 'expense', amt, d, note); st.toast("✅ Đã ghi!"); st.rerun()
-                    else: st.warning("Nhập số tiền.")
+        st.markdown("### 📈 Dòng tiền 14 ngày gần nhất")
+        if not tx.empty:
+            flow_df = tx[tx["type"].isin(["income", "expense"])].copy()
+            flow_df = flow_df[flow_df["date"] >= (pd.Timestamp.today().normalize() - pd.Timedelta(days=14))]
+            if not flow_df.empty:
+                daily = flow_df.groupby(["date", "type"])["amount"].sum().reset_index()
+                daily.loc[daily["type"] == "expense", "amount"] *= -1
+                fig2 = px.bar(
+                    daily,
+                    x="date",
+                    y="amount",
+                    color="type",
+                    color_discrete_map={"income": SUCCESS, "expense": DANGER},
+                )
+                fig2.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10))
+                st.plotly_chart(fig2, use_container_width=True)
+            else:
+                st.info("Chưa có dữ liệu 14 ngày gần nhất.")
 
-        with t2:
-            with st.form("f_inc", clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                amt = c1.number_input("Số tiền thu (₫)", min_value=0.0, step=100000.0)
-                cats = get_categories(uid, 'income')
-                cat_d = {f"{r['icon']} {r['name']}": r['id'] for _, r in cats.iterrows()}
-                cat_id = c2.selectbox("Nguồn thu", list(cat_d.keys()))
-                c3, c4, c5 = st.columns([1.5, 2, 1])
-                w_id = c3.selectbox("Vào ví", list(w_dict.keys()))
-                note = c4.text_input("Ghi chú")
-                d = c5.date_input("Ngày", value=date.today())
-                if st.form_submit_button("Lưu Thu Nhập 📥", type="primary", use_container_width=True):
-                    if amt > 0: execute_transaction(uid, w_dict[w_id], cat_d[cat_id], 'income', amt, d, note); st.toast("✅ Đã ghi!"); st.rerun()
 
-        with t3:
-            with st.form("f_tra", clear_on_submit=True):
-                c1, c2, c3 = st.columns(3)
-                amt = c1.number_input("Số tiền (₫)", min_value=0.0, step=50000.0)
-                fw = c2.selectbox("Từ ví", list(w_dict.keys()), key='fw')
-                tw = c3.selectbox("Đến ví", list(w_dict.keys()), key='tw')
-                c4, c5 = st.columns([2, 1])
-                note = c4.text_input("Lý do")
-                d = c5.date_input("Ngày", value=date.today(), key='dt')
-                if st.form_submit_button("Thực Hiện Chuyển 🔄", type="primary", use_container_width=True):
-                    if amt > 0 and fw != tw: execute_transaction(uid, w_dict[fw], None, 'transfer', amt, d, note, target_w_id=w_dict[tw]); st.toast("✅ Hoàn tất!"); st.rerun()
-                    elif fw == tw: st.error("Ví nguồn và đích phải khác nhau.")
+def render_transactions(uid: int):
+    page_header("📝 Giao dịch", "Thêm, sửa, xóa và theo dõi toàn bộ lịch sử thu chi.")
+    wallets_df = get_wallets(uid)
+    if wallets_df.empty:
+        st.error("Bạn cần tạo ít nhất một ví trước khi ghi giao dịch.")
+        return
+    wallet_map = {row["name"]: int(row["id"]) for _, row in wallets_df.iterrows()}
 
-    st.markdown("### 📋 Sổ cái (Lịch sử)")
-    df = get_transactions_df(uid)
-    if not df.empty:
-        df['Hiển thị'] = df.apply(lambda r: f"🔴 -{fmt_money(r['amount'])}" if r['type']=='expense' else f"🟢 +{fmt_money(r['amount'])}" if r['type']=='income' else f"🔄 {fmt_money(r['amount'])}", axis=1)
-        col1, col2 = st.columns(2)
-        f_month = col1.selectbox("Lọc Tháng", ["Tất cả"] + sorted(df['month'].unique().tolist(), reverse=True))
-        if f_month != "Tất cả": df = df[df['month'] == f_month]
-        st.dataframe(df[['id', 'date', 'wallet_name', 'cat_name', 'Hiển thị', 'note']].rename(columns={'id':'ID','date':'Ngày','wallet_name':'Ví','cat_name':'Mục','note':'Ghi chú'}), use_container_width=True, hide_index=True)
-        
-        with st.expander("🗑️ Hủy/Xóa Giao Dịch"):
-            del_id = st.selectbox("Chọn ID", df['id'].tolist())
-            if st.button("Xác nhận Xóa (Hoàn tiền về Ví)", type="primary"):
-                if delete_transaction(del_id, uid): st.success("Đã xóa!"); st.rerun()
-    else: st.info("Sổ cái trống.")
+    tab_expense, tab_income, tab_transfer, tab_edit = st.tabs([
+        "💸 Chi tiêu", "💰 Thu nhập", "🔄 Chuyển khoản", "✏️ Sửa giao dịch"
+    ])
 
-# --- D. VÍ & QUỸ (WALLETS & GOALS) ---
-def page_wallets_goals(uid):
-    st.markdown("<h2>💼 Quản lý Ví & Quỹ Để Dành</h2>", unsafe_allow_html=True)
-    t1, t2 = st.tabs(["🏦 Quản lý Ví Tiền", "🎯 Quỹ Tiết Kiệm (Để dành)"])
-    
-    with t1:
-        st.markdown("#### Mở Ví mới")
-        with st.form("new_w"):
-            c1, c2, c3 = st.columns([2, 1.5, 1])
-            n = c1.text_input("Tên Ví (Vd: Thẻ Visa, Két sắt...)")
-            b = c2.number_input("Số dư hiện có", min_value=0.0, step=100000.0)
-            t = c3.selectbox("Loại", ["bank", "cash", "credit"])
-            if st.form_submit_button("Tạo Ví", type="primary", use_container_width=True):
-                if n: add_wallet(uid, n, b, t); st.success("Đã tạo!"); st.rerun()
-        
-        st.markdown("#### Trạng thái các Ví")
-        w_df = get_wallets(uid)
-        if not w_df.empty: st.dataframe(w_df[['name', 'balance', 'type']].rename(columns={'name':'Tên Ví', 'balance':'Số Dư', 'type':'Phân loại'}).style.format({"Số Dư":"{:,.0f} ₫"}), use_container_width=True, hide_index=True)
+    with tab_expense:
+        cats = get_categories(uid, "expense")
+        cat_map = {f"{r['icon']} {r['name']}": int(r['id']) for _, r in cats.iterrows()}
+        with st.form("add_expense_form", clear_on_submit=True):
+            a, b = st.columns(2)
+            amount = a.number_input("Số tiền", min_value=0.0, step=10000.0)
+            category_label = b.selectbox("Danh mục", list(cat_map.keys()))
+            c1, c2, c3 = st.columns([1.2, 1.8, 1])
+            wallet_name = c1.selectbox("Chi từ ví", list(wallet_map.keys()), key="expense_wallet")
+            note = c2.text_input("Ghi chú")
+            tx_date = c3.date_input("Ngày", value=date.today(), key="expense_date")
+            submitted = st.form_submit_button("Lưu khoản chi", type="primary", use_container_width=True)
+            if submitted:
+                if amount <= 0:
+                    st.warning("Số tiền phải lớn hơn 0.")
+                else:
+                    create_transaction(uid, wallet_map[wallet_name], cat_map[category_label], "expense", amount, tx_date, note)
+                    st.success("Đã lưu khoản chi.")
+                    st.rerun()
 
-    with t2:
-        st.info("💡 Trích lập các quỹ riêng (Mua xe, Tiền học, Trả nợ...) để dễ theo dõi.")
-        with st.form("new_g"):
-            c1, c2, c3 = st.columns([2, 1.5, 1.5])
-            n = c1.text_input("Tên Quỹ / Mục tiêu")
-            tg = c2.number_input("Cần gom bao nhiêu (₫)?", min_value=0.0, step=1000000.0)
-            dead = c3.date_input("Hạn chót")
-            if st.form_submit_button("Khởi Tạo Mục Tiêu", type="primary", use_container_width=True):
-                if n and tg > 0: add_goal(uid, n, tg, dead); st.success("Thành công!"); st.rerun()
-                
-        df_g = get_goals(uid)
-        if not df_g.empty:
-            for _, g in df_g.iterrows():
-                with st.container(border=True):
-                    is_done = g['status'] == 'completed'
-                    icon = "✅" if is_done else "⏳"
-                    pct = min(g['current_amount'] / g['target_amount'], 1.0) if g['target_amount'] > 0 else 0
-                    st.markdown(f"#### {icon} {g['name']}")
-                    st.write(f"Mục tiêu: **{fmt_money(g['target_amount'])}** | Hạn chót: {g['deadline']}")
-                    cp, ct = st.columns([4, 1])
-                    cp.progress(pct); ct.write(f"**{pct*100:.1f}%**")
-                    st.write(f"Đã gom: <span style='color:#059669;font-weight:bold;'>{fmt_money(g['current_amount'])}</span> | Còn thiếu: <span style='color:#ef4444;'>{fmt_money(g['target_amount'] - g['current_amount'])}</span>", unsafe_allow_html=True)
-                    if not is_done:
-                        with st.expander("Bơm tiền vào quỹ"):
-                            with st.form(f"fund_{g['id']}"):
-                                a = st.number_input("Số tiền", min_value=0.0, step=50000.0)
-                                if st.form_submit_button("Bơm 🚀", type="primary"):
-                                    if a > 0: fund_goal(g['id'], a); st.toast("Đã tăng quỹ!"); st.rerun()
-        else: st.caption("Danh sách Quỹ trống.")
+    with tab_income:
+        cats = get_categories(uid, "income")
+        cat_map = {f"{r['icon']} {r['name']}": int(r['id']) for _, r in cats.iterrows()}
+        with st.form("add_income_form", clear_on_submit=True):
+            a, b = st.columns(2)
+            amount = a.number_input("Số tiền", min_value=0.0, step=100000.0, key="income_amount")
+            category_label = b.selectbox("Nguồn thu", list(cat_map.keys()))
+            c1, c2, c3 = st.columns([1.2, 1.8, 1])
+            wallet_name = c1.selectbox("Vào ví", list(wallet_map.keys()), key="income_wallet")
+            note = c2.text_input("Ghi chú", key="income_note")
+            tx_date = c3.date_input("Ngày", value=date.today(), key="income_date")
+            submitted = st.form_submit_button("Lưu thu nhập", type="primary", use_container_width=True)
+            if submitted:
+                if amount <= 0:
+                    st.warning("Số tiền phải lớn hơn 0.")
+                else:
+                    create_transaction(uid, wallet_map[wallet_name], cat_map[category_label], "income", amount, tx_date, note)
+                    st.success("Đã lưu thu nhập.")
+                    st.rerun()
 
-# --- E. THỐNG KÊ (ANALYTICS) ---
-def page_analytics(uid):
-    st.markdown("<h2>📈 Báo Cáo & Dòng Tiền</h2>", unsafe_allow_html=True)
-    df = get_transactions_df(uid)
-    if df.empty: st.info("Chưa có dữ liệu!"); return
-    
-    m = st.selectbox("📅 Lọc theo tháng", ["Tất cả thời gian"] + sorted(df['month'].unique().tolist(), reverse=True))
-    plot_df = df if m == "Tất cả thời gian" else df[df['month'] == m]
-    if plot_df.empty: st.warning("Không có giao dịch."); return
+    with tab_transfer:
+        with st.form("transfer_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            amount = c1.number_input("Số tiền", min_value=0.0, step=50000.0, key="transfer_amount")
+            from_wallet = c2.selectbox("Từ ví", list(wallet_map.keys()), key="from_wallet")
+            to_wallet = c3.selectbox("Đến ví", list(wallet_map.keys()), key="to_wallet")
+            d1, d2 = st.columns([2, 1])
+            note = d1.text_input("Nội dung", key="transfer_note")
+            tx_date = d2.date_input("Ngày", value=date.today(), key="transfer_date")
+            submitted = st.form_submit_button("Thực hiện chuyển khoản", type="primary", use_container_width=True)
+            if submitted:
+                if amount <= 0:
+                    st.warning("Số tiền phải lớn hơn 0.")
+                elif from_wallet == to_wallet:
+                    st.error("Ví nguồn và ví đích phải khác nhau.")
+                else:
+                    create_transaction(
+                        uid,
+                        wallet_map[from_wallet],
+                        None,
+                        "transfer",
+                        amount,
+                        tx_date,
+                        note,
+                        target_wallet_id=wallet_map[to_wallet],
+                    )
+                    st.success("Đã chuyển khoản.")
+                    st.rerun()
 
-    exp_df, inc_df = plot_df[plot_df['type'] == 'expense'], plot_df[plot_df['type'] == 'income']
-    t_exp, t_inc = exp_df['amount'].sum(), inc_df['amount'].sum()
-    
+    tx_df = get_transactions(uid)
+    if tx_df.empty:
+        st.info("Chưa có giao dịch nào.")
+        return
+
+    st.markdown("### 📒 Nhật ký giao dịch")
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    month_options = ["Tất cả"] + sorted(tx_df["month"].unique().tolist(), reverse=True)
+    selected_month = filter_col1.selectbox("Lọc theo tháng", month_options)
+    selected_type = filter_col2.selectbox("Lọc theo loại", ["Tất cả", "expense", "income", "transfer"])
+    keyword = filter_col3.text_input("Tìm ghi chú / danh mục")
+
+    view_df = tx_df.copy()
+    if selected_month != "Tất cả":
+        view_df = view_df[view_df["month"] == selected_month]
+    if selected_type != "Tất cả":
+        view_df = view_df[view_df["type"] == selected_type]
+    if keyword.strip():
+        mask = (
+            view_df["note"].fillna("").str.contains(keyword, case=False)
+            | view_df["category_name"].fillna("").str.contains(keyword, case=False)
+            | view_df["wallet_name"].fillna("").str.contains(keyword, case=False)
+        )
+        view_df = view_df[mask]
+
+    view_df["Hiển thị"] = view_df.apply(
+        lambda r: (
+            f"🔴 -{money(r['amount'])}" if r["type"] == "expense" else
+            f"🟢 +{money(r['amount'])}" if r["type"] == "income" else
+            f"🔄 {money(r['amount'])}"
+        ),
+        axis=1,
+    )
+    view_df["Danh mục"] = view_df.apply(
+        lambda r: r["category_name"] if pd.notna(r["category_name"]) else (f"{r['wallet_name']} → {r['target_wallet_name']}" if r["type"] == "transfer" else "-"),
+        axis=1,
+    )
+    st.dataframe(
+        view_df[["id", "date", "wallet_name", "Danh mục", "Hiển thị", "note", "type"]].rename(
+            columns={
+                "id": "ID",
+                "date": "Ngày",
+                "wallet_name": "Ví",
+                "note": "Ghi chú",
+                "type": "Loại",
+            }
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    csv_data = export_transactions_csv(view_df)
+    if csv_data:
+        st.download_button(
+            "⬇️ Tải CSV giao dịch",
+            data=csv_data,
+            file_name=f"transactions_{uid}.csv",
+            mime="text/csv",
+            use_container_width=False,
+        )
+
+    with tab_edit:
+        editable_ids = tx_df["id"].tolist()
+        edit_id = st.selectbox("Chọn ID cần sửa", editable_ids)
+        selected = tx_df[tx_df["id"] == edit_id].iloc[0]
+        tx_type = st.selectbox("Loại", ["expense", "income", "transfer"], index=["expense", "income", "transfer"].index(selected["type"]), key="edit_type")
+        amount = st.number_input("Số tiền", min_value=0.0, value=float(selected["amount"]), step=10000.0, key="edit_amount")
+        tx_date = st.date_input("Ngày", value=selected["date"].date(), key="edit_date")
+        note = st.text_input("Ghi chú", value=selected["note"] or "", key="edit_note")
+        wallet_name = st.selectbox(
+            "Ví chính",
+            list(wallet_map.keys()),
+            index=list(wallet_map.values()).index(int(selected["wallet_id"])),
+            key="edit_wallet",
+        )
+
+        category_id = None
+        target_wallet_id = None
+        if tx_type in ["expense", "income"]:
+            cats = get_categories(uid, tx_type)
+            cat_map = {f"{r['icon']} {r['name']}": int(r['id']) for _, r in cats.iterrows()}
+            cat_values = list(cat_map.values())
+            current_cat_index = cat_values.index(int(selected["category_id"])) if pd.notna(selected["category_id"]) and int(selected["category_id"]) in cat_values else 0
+            category_label = st.selectbox("Danh mục", list(cat_map.keys()), index=current_cat_index, key="edit_category")
+            category_id = cat_map[category_label]
+        else:
+            target_wallet_name = selected["target_wallet_name"] if pd.notna(selected["target_wallet_name"]) else list(wallet_map.keys())[0]
+            target_wallet_label = st.selectbox(
+                "Ví nhận",
+                list(wallet_map.keys()),
+                index=list(wallet_map.keys()).index(target_wallet_name) if target_wallet_name in list(wallet_map.keys()) else 0,
+                key="edit_target_wallet",
+            )
+            target_wallet_id = wallet_map[target_wallet_label]
+
+        e1, e2 = st.columns(2)
+        if e1.button("💾 Cập nhật giao dịch", type="primary", use_container_width=True):
+            if tx_type == "transfer" and wallet_map[wallet_name] == target_wallet_id:
+                st.error("Ví nguồn và ví nhận phải khác nhau.")
+            elif amount <= 0:
+                st.warning("Số tiền phải lớn hơn 0.")
+            else:
+                update_transaction(
+                    edit_id,
+                    uid,
+                    wallet_map[wallet_name],
+                    category_id,
+                    tx_type,
+                    amount,
+                    tx_date,
+                    note,
+                    target_wallet_id,
+                )
+                st.success("Đã cập nhật giao dịch.")
+                st.rerun()
+        if e2.button("🗑️ Xóa giao dịch", use_container_width=True):
+            if delete_transaction(edit_id, uid):
+                st.success("Đã xóa giao dịch và hoàn tác số dư ví.")
+                st.rerun()
+            else:
+                st.error("Không tìm thấy giao dịch.")
+
+
+def render_wallets_goals(uid: int):
+    page_header("💼 Ví & quỹ", "Quản lý tài khoản tiền và mục tiêu tiết kiệm dài hạn.")
+    tab_wallets, tab_goals = st.tabs(["🏦 Ví tiền", "🎯 Mục tiêu tiết kiệm"])
+
+    with tab_wallets:
+        with st.form("add_wallet_form"):
+            c1, c2, c3 = st.columns([2, 1.2, 1])
+            name = c1.text_input("Tên ví")
+            balance = c2.number_input("Số dư ban đầu", min_value=0.0, step=100000.0)
+            wallet_type = c3.selectbox("Loại", ["bank", "cash", "credit"])
+            submitted = st.form_submit_button("Tạo ví", type="primary", use_container_width=True)
+            if submitted:
+                if not name.strip():
+                    st.warning("Tên ví không được để trống.")
+                else:
+                    add_wallet(uid, name, balance, wallet_type)
+                    st.success("Đã tạo ví mới.")
+                    st.rerun()
+
+        wallets = get_wallets(uid)
+        if wallets.empty:
+            st.info("Chưa có ví.")
+        else:
+            display = wallets[["name", "balance", "type", "is_default"]].copy()
+            display["balance"] = display["balance"].map(money)
+            display["is_default"] = display["is_default"].map(lambda x: "Mặc định" if x else "")
+            st.dataframe(
+                display.rename(columns={"name": "Tên ví", "balance": "Số dư", "type": "Loại", "is_default": "Ghi chú"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with tab_goals:
+        with st.form("goal_form"):
+            c1, c2, c3 = st.columns([2, 1.2, 1.2])
+            goal_name = c1.text_input("Tên mục tiêu")
+            target_amount = c2.number_input("Mục tiêu số tiền", min_value=0.0, step=500000.0)
+            deadline = c3.date_input("Hạn chót", value=date.today())
+            submitted = st.form_submit_button("Tạo mục tiêu", type="primary", use_container_width=True)
+            if submitted:
+                if not goal_name.strip() or target_amount <= 0:
+                    st.warning("Nhập tên và mục tiêu hợp lệ.")
+                else:
+                    add_goal(uid, goal_name, target_amount, deadline)
+                    st.success("Đã tạo mục tiêu.")
+                    st.rerun()
+
+        goals = get_goals(uid)
+        if goals.empty:
+            st.info("Chưa có mục tiêu tiết kiệm.")
+        else:
+            for _, goal in goals.iterrows():
+                pct = min(goal["current_amount"] / goal["target_amount"], 1.0) if goal["target_amount"] > 0 else 0
+                icon = "✅" if goal["status"] == "completed" else "🎯"
+                st.markdown(f"### {icon} {goal['name']}")
+                st.progress(pct)
+                st.caption(f"Đã có {money(goal['current_amount'])} / {money(goal['target_amount'])} · Hạn: {goal['deadline']}")
+                with st.expander(f"Nạp tiền vào quỹ: {goal['name']}"):
+                    amount = st.number_input(
+                        "Số tiền nạp",
+                        min_value=0.0,
+                        step=50000.0,
+                        key=f"goal_fund_{goal['id']}",
+                    )
+                    if st.button("Nạp tiền", key=f"goal_btn_{goal['id']}", type="primary"):
+                        if amount > 0:
+                            fund_goal(int(goal["id"]), amount)
+                            st.success("Đã cập nhật quỹ.")
+                            st.rerun()
+
+
+def render_analytics(uid: int):
+    page_header("📈 Phân tích", "Xem xu hướng chi tiêu và hiệu quả quản lý tài chính.")
+    df = get_transactions(uid)
+    if df.empty:
+        st.info("Chưa có dữ liệu để phân tích.")
+        return
+
+    month_options = ["Tất cả"] + sorted(df["month"].unique().tolist(), reverse=True)
+    selected_month = st.selectbox("Chọn tháng", month_options)
+    plot_df = df if selected_month == "Tất cả" else df[df["month"] == selected_month]
+    if plot_df.empty:
+        st.warning("Không có giao dịch ở bộ lọc hiện tại.")
+        return
+
+    expense_df = plot_df[plot_df["type"] == "expense"]
+    income_df = plot_df[plot_df["type"] == "income"]
+    total_income = income_df["amount"].sum()
+    total_expense = expense_df["amount"].sum()
+    net = total_income - total_expense
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng Thu", fmt_money(t_inc))
-    c2.metric("Tổng Chi", fmt_money(t_exp))
-    c3.metric("Chênh Lệch", fmt_money(t_inc - t_exp), delta_color="normal" if (t_inc - t_exp)>=0 else "inverse")
+    c1.metric("Tổng thu", money(total_income))
+    c2.metric("Tổng chi", money(total_expense))
+    c3.metric("Lãi / lỗ", money(net), delta_color="normal" if net >= 0 else "inverse")
 
-    st.markdown("---")
-    cl1, cl2 = st.columns(2)
-    with cl1:
-        st.markdown("#### 🔴 Tiền đi đâu?")
-        if not exp_df.empty: st.plotly_chart(px.pie(exp_df.groupby('cat_name')['amount'].sum().reset_index(), values='amount', names='cat_name', hole=0.45), use_container_width=True)
-    with cl2:
-        st.markdown("#### 🟢 Tiền đến từ đâu?")
-        if not inc_df.empty: st.plotly_chart(px.pie(inc_df.groupby('cat_name')['amount'].sum().reset_index(), values='amount', names='cat_name', hole=0.45), use_container_width=True)
+    left, right = st.columns(2)
+    with left:
+        st.markdown("### Cấu trúc chi tiêu")
+        if not expense_df.empty:
+            pie = px.pie(
+                expense_df.groupby("category_name", dropna=False)["amount"].sum().reset_index(),
+                values="amount",
+                names="category_name",
+                hole=0.5,
+                color_discrete_sequence=px.colors.qualitative.Set3,
+            )
+            pie.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
+            st.plotly_chart(pie, use_container_width=True)
+        else:
+            st.info("Không có chi tiêu ở kỳ này.")
 
-    st.markdown("#### 📊 Lưu lượng dòng tiền (Cashflow)")
-    flow = plot_df[plot_df['type'].isin(['income','expense'])].groupby(['date','type'])['amount'].sum().reset_index()
-    flow.loc[flow['type']=='expense', 'amount'] *= -1
-    st.plotly_chart(px.bar(flow, x='date', y='amount', color='type', color_discrete_map={'income':'#10b981','expense':'#ef4444'}, title="Thu - Chi theo ngày"), use_container_width=True)
+    with right:
+        st.markdown("### Cấu trúc thu nhập")
+        if not income_df.empty:
+            pie = px.pie(
+                income_df.groupby("category_name", dropna=False)["amount"].sum().reset_index(),
+                values="amount",
+                names="category_name",
+                hole=0.5,
+                color_discrete_sequence=px.colors.qualitative.Pastel,
+            )
+            pie.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
+            st.plotly_chart(pie, use_container_width=True)
+        else:
+            st.info("Không có thu nhập ở kỳ này.")
 
-# --- F. CÀI ĐẶT & ADMIN (SETTINGS) ---
-def page_settings(uid, role):
-    st.markdown("<h2>⚙️ Cài Đặt Hệ Thống</h2>", unsafe_allow_html=True)
-    
+    st.markdown("### Dòng tiền theo ngày")
+    flow_df = plot_df[plot_df["type"].isin(["income", "expense"])].copy()
+    grouped = flow_df.groupby(["date", "type"])["amount"].sum().reset_index()
+    grouped.loc[grouped["type"] == "expense", "amount"] *= -1
+    fig = px.bar(
+        grouped,
+        x="date",
+        y="amount",
+        color="type",
+        color_discrete_map={"income": SUCCESS, "expense": DANGER},
+    )
+    fig.update_layout(height=360)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### Xu hướng tích lũy")
+    line_df = flow_df.copy()
+    line_df["signed_amount"] = line_df.apply(lambda r: r["amount"] if r["type"] == "income" else -r["amount"], axis=1)
+    trend = line_df.groupby("date")["signed_amount"].sum().sort_index().cumsum().reset_index()
+    line = go.Figure()
+    line.add_trace(go.Scatter(x=trend["date"], y=trend["signed_amount"], mode="lines+markers", line=dict(color=PRIMARY, width=3)))
+    line.update_layout(height=340, margin=dict(l=10, r=10, t=20, b=10))
+    st.plotly_chart(line, use_container_width=True)
+
+
+def render_settings(uid: int, role: str):
+    page_header("⚙️ Cài đặt", "Tùy chỉnh ngân sách, danh mục và quản trị người dùng.")
+
     with st.container(border=True):
-        st.markdown("#### 💰 Cấu hình Ngân Sách Tổng")
-        cm = datetime.now().strftime("%Y-%m")
-        cur_bg = get_total_budget(uid, cm)
-        c_b, c_btn = st.columns([3, 1])
-        new_bg = c_b.number_input(f"Ngân sách tháng {cm} (₫)", value=cur_bg, step=500000.0)
-        c_btn.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if c_btn.button("Lưu Ngân Sách", type="primary", use_container_width=True):
-            update_budget(uid, cm, new_bg); st.success("✅ Đã cập nhật!")
+        st.markdown("### 💰 Ngân sách tháng")
+        current_month = month_label()
+        current_budget = get_budget(uid, current_month)
+        c1, c2 = st.columns([3, 1])
+        new_budget = c1.number_input(f"Ngân sách tháng {current_month}", value=current_budget, min_value=0.0, step=500000.0)
+        if c2.button("Lưu ngân sách", type="primary", use_container_width=True):
+            update_budget(uid, current_month, new_budget)
+            st.success("Đã cập nhật ngân sách.")
 
     st.markdown("---")
-    with st.expander("🗂️ Thêm Danh Mục Cá Nhân Mới", expanded=False):
-        t1, t2 = st.tabs(["🔴 Mục Chi Tiêu", "🟢 Mục Thu Nhập"])
-        with t1:
-            with st.form("f_add_exp"):
-                c1, c2 = st.columns([3, 1])
-                n = c1.text_input("Tên (VD: Cafe, Mua Game)")
-                i = c2.text_input("Icon Emoji", value="🏷️")
-                if st.form_submit_button("Thêm Mục", type="primary"):
-                    if n: 
-                        conn=get_conn(); conn.execute("INSERT INTO categories (user_id, name, type, icon) VALUES (?, ?, 'expense', ?)", (uid, n, i)); conn.commit(); conn.close(); st.rerun()
-            st.write("Các mục hiện có: " + ", ".join([f"{r['icon']} {r['name']}" for _, r in get_categories(uid, 'expense').iterrows()]))
-        with t2:
-            with st.form("f_add_inc"):
-                c1, c2 = st.columns([3, 1])
-                n = c1.text_input("Tên (VD: Tiền lãi)")
-                i = c2.text_input("Icon Emoji", value="💵")
-                if st.form_submit_button("Thêm Mục", type="primary"):
-                    if n: 
-                        conn=get_conn(); conn.execute("INSERT INTO categories (user_id, name, type, icon) VALUES (?, ?, 'income', ?)", (uid, n, i)); conn.commit(); conn.close(); st.rerun()
-            st.write("Các mục hiện có: " + ", ".join([f"{r['icon']} {r['name']}" for _, r in get_categories(uid, 'income').iterrows()]))
+    st.markdown("### 🗂️ Danh mục cá nhân")
+    cat_tab1, cat_tab2 = st.tabs(["Chi tiêu", "Thu nhập"])
+    with cat_tab1:
+        with st.form("add_exp_category"):
+            c1, c2 = st.columns([3, 1])
+            name = c1.text_input("Tên danh mục chi")
+            icon = c2.text_input("Emoji", value="🏷️")
+            if st.form_submit_button("Thêm danh mục", type="primary"):
+                if name.strip():
+                    try:
+                        add_category(uid, name, "expense", icon)
+                        st.success("Đã thêm danh mục chi tiêu.")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("Danh mục đã tồn tại.")
+        cats = get_categories(uid, "expense")
+        st.write(" ".join([f"`{r['icon']} {r['name']}`" for _, r in cats.iterrows()]))
+
+    with cat_tab2:
+        with st.form("add_inc_category"):
+            c1, c2 = st.columns([3, 1])
+            name = c1.text_input("Tên danh mục thu")
+            icon = c2.text_input("Emoji", value="💵")
+            if st.form_submit_button("Thêm danh mục", type="primary"):
+                if name.strip():
+                    try:
+                        add_category(uid, name, "income", icon)
+                        st.success("Đã thêm danh mục thu nhập.")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("Danh mục đã tồn tại.")
+        cats = get_categories(uid, "income")
+        st.write(" ".join([f"`{r['icon']} {r['name']}`" for _, r in cats.iterrows()]))
+
+    st.markdown("---")
+    st.markdown("### 🔐 Tài khoản")
+    with st.expander("Đổi mật khẩu tài khoản hiện tại"):
+        with st.form("change_my_password"):
+            new_password = st.text_input("Mật khẩu mới", type="password")
+            if st.form_submit_button("Đổi mật khẩu", type="primary"):
+                if len(new_password) < 6:
+                    st.warning("Mật khẩu tối thiểu 6 ký tự.")
+                else:
+                    reset_user_password(uid, new_password)
+                    st.success("Đã đổi mật khẩu.")
 
     if role == "admin":
         st.markdown("---")
-        st.markdown("### 🛡️ Quản Trị Hệ Thống (Dành riêng Admin)")
-        conn = get_conn()
-        pending = conn.execute("SELECT id, username, created_at FROM users WHERE is_approved=0").fetchall()
-        if pending:
-            for r in pending:
-                with st.container(border=True):
-                    c1, c2 = st.columns([4, 1])
-                    c1.markdown(f"👤 Tài khoản: **{r[1]}** (Đăng ký: {r[2]})")
-                    if c2.button("Duyệt Ngay", key=f"appr_{r[0]}", type="primary"):
-                        conn.execute("UPDATE users SET is_approved=1 WHERE id=?", (r[0],)); conn.commit(); st.rerun()
-        else: st.info("Không có tài khoản chờ duyệt.")
-        conn.close()
+        st.markdown("### 🛡️ Quản trị hệ thống")
+        users_df = get_users_admin_view()
+        st.dataframe(users_df, use_container_width=True, hide_index=True)
+        user_ids = users_df["id"].tolist()
+        if user_ids:
+            c1, c2 = st.columns(2)
+            with c1:
+                selected_user = st.selectbox("Chọn user để duyệt", user_ids, format_func=lambda x: f"ID {x} - {users_df[users_df['id']==x].iloc[0]['username']}")
+                if st.button("Duyệt tài khoản", type="primary", use_container_width=True):
+                    approve_user(int(selected_user))
+                    st.success("Đã duyệt tài khoản.")
+                    st.rerun()
+            with c2:
+                selected_reset = st.selectbox("Chọn user để reset mật khẩu", user_ids, format_func=lambda x: f"ID {x} - {users_df[users_df['id']==x].iloc[0]['username']}", key="reset_user_select")
+                admin_new_pw = st.text_input("Mật khẩu mới cho user", type="password", key="admin_new_pw")
+                if st.button("Reset mật khẩu", use_container_width=True):
+                    if len(admin_new_pw) < 6:
+                        st.warning("Mật khẩu tối thiểu 6 ký tự.")
+                    else:
+                        reset_user_password(int(selected_reset), admin_new_pw)
+                        st.success("Đã reset mật khẩu user.")
 
-# ==============================================================================
-# 6. ROUTER & MAIN EXECUTION
-# ==============================================================================
+
+def render_quick_add(uid: int):
+    with st.popover("quick_add_hidden"):
+        st.markdown("### ⚡ Ghi nhanh")
+        wallets = get_wallets(uid)
+        cats = get_categories(uid, "expense")
+        if wallets.empty or cats.empty:
+            st.warning("Cần có ví và danh mục để ghi nhanh.")
+            return
+        default_wallet_id = int(wallets.iloc[0]["id"])
+        cat_labels = [f"{r['icon']} {r['name']}" for _, r in cats.iterrows()]
+        cat_ids = [int(r['id']) for _, r in cats.iterrows()]
+        with st.form("quick_add_form", clear_on_submit=True):
+            amount = st.number_input("Số tiền", min_value=0.0, step=10000.0)
+            idx = st.selectbox("Danh mục", options=list(range(len(cat_labels))), format_func=lambda x: cat_labels[x])
+            note = st.text_input("Ghi chú")
+            if st.form_submit_button("Lưu ngay", type="primary", use_container_width=True):
+                if amount <= 0:
+                    st.warning("Số tiền phải lớn hơn 0.")
+                else:
+                    create_transaction(uid, default_wallet_id, cat_ids[idx], "expense", amount, date.today(), note)
+                    st.success("Đã ghi nhanh khoản chi.")
+                    st.rerun()
+
+
+# =========================================================
+# MAIN
+# =========================================================
 def main():
+    ensure_session_state()
     init_db()
-    inject_global_css()
+    inject_css()
 
     if not st.session_state.logged_in:
-        st.markdown("<h1 style='text-align:center; color:#059669; margin-top:50px; font-weight: 800;'>💎 FinPro Ultimate</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:gray;'>Phần Mềm Quản Lý Tài Chính & Dòng Tiền Không Giới Hạn</p>", unsafe_allow_html=True)
-        _, col, _ = st.columns([1, 1.5, 1])
-        with col:
-            t1, t2 = st.tabs(["Đăng Nhập Hệ Thống", "Mở Tài Khoản Mới"])
-            with t1:
-                with st.container(border=True):
-                    with st.form("login_form"):
-                        u = st.text_input("Tên đăng nhập")
-                        p = st.text_input("Mật khẩu", type="password")
-                        if st.form_submit_button("Vào Hệ Thống 🚀", type="primary", use_container_width=True):
-                            user = auth_user(u, p)
-                            if not user: st.error("❌ Thông tin đăng nhập không chính xác!")
-                            elif user[3] == 0: st.warning("⏳ Tài khoản đang chờ Admin xét duyệt.")
-                            else:
-                                st.session_state.update({"logged_in": True, "uid": user[0], "uname": user[1], "role": user[2]})
-                                st.rerun()
-            with t2:
-                with st.container(border=True):
-                    st.info("Hệ thống sẽ tự động cấp phát Ví và Danh mục chuẩn cho tài khoản mới.")
-                    with st.form("reg_form"):
-                        nu = st.text_input("Tên đăng nhập mong muốn")
-                        np = st.text_input("Mật khẩu", type="password")
-                        if st.form_submit_button("Đăng Ký Miễn Phí", use_container_width=True):
-                            if nu and np:
-                                if register_user(nu, np): st.success("🎉 Tạo tài khoản thành công! Vui lòng báo Admin duyệt.")
-                                else: st.error("⚠️ Tên đăng nhập này đã tồn tại.")
-                            else: st.warning("Vui lòng nhập đủ thông tin.")
-    else:
-        uid = st.session_state.uid
-        
-        # SIDEBAR
-        with st.sidebar:
-            st.markdown(f"### 👋 Xin chào,<br><span style='color:#059669;'>{st.session_state.uname.upper()}</span>", unsafe_allow_html=True)
-            st.markdown("---")
-            menu = st.radio("MENU", ["🏠 Tổng Quan", "📝 Giao Dịch", "💼 Ví & Quỹ", "📈 Thống Kê", "⚙️ Cài Đặt"], label_visibility="collapsed")
-            st.markdown("---")
-            if st.button("🚪 Đăng Xuất", use_container_width=True):
-                st.session_state.clear(); st.rerun()
+        render_auth_page()
+        return
 
-        # ĐIỀU HƯỚNG CÁC TRANG
-        if menu == "🏠 Tổng Quan": page_dashboard(uid)
-        elif menu == "📝 Giao Dịch": page_transactions(uid)
-        elif menu == "💼 Ví & Quỹ": page_wallets_goals(uid)
-        elif menu == "📈 Thống Kê": page_analytics(uid)
-        elif menu == "⚙️ Cài Đặt": page_settings(uid, st.session_state.role)
+    uid = st.session_state.uid
+    username = st.session_state.username
+    role = st.session_state.role
 
-        # NÚT QUICK ADD NỔI Ở GÓC DƯỚI BÊN PHẢI
-        with st.popover("QuickAddHiddenBtn"):
-            st.markdown("##### ⚡ Ghi Chi Tiêu Nhanh")
-            w_df = get_wallets(uid)
-            if not w_df.empty:
-                def_w = w_df.iloc[0]['id']
-                with st.form("quick_exp_form", clear_on_submit=True):
-                    amt = st.number_input("Số tiền chi (₫)", min_value=0.0, step=10000.0)
-                    cats_exp = get_categories(uid, 'expense')
-                    cat_names = [f"{r['icon']} {r['name']}" for _, r in cats_exp.iterrows()]
-                    cat_ids = [r['id'] for _, r in cats_exp.iterrows()]
-                    c_idx = st.selectbox("Mục đích", range(len(cat_names)), format_func=lambda x: cat_names[x])
-                    nt = st.text_input("Ghi chú", placeholder="Ăn trưa, đổ xăng...")
-                    if st.form_submit_button("LƯU NGAY 🚀", type="primary", use_container_width=True):
-                        if amt > 0:
-                            execute_transaction(uid, def_w, cat_ids[c_idx], 'expense', amt, date.today(), nt)
-                            st.toast("✅ Đã ghi nhận!"); st.rerun()
-                        else: st.warning("Nhập số tiền > 0.")
-            else: st.error("⚠️ Bạn chưa có Ví nào. Xin hãy qua menu 'Ví & Quỹ' để tạo ví.")
+    with st.sidebar:
+        st.markdown(f"## {APP_TITLE}")
+        st.caption(f"Xin chào, {username}")
+        st.markdown('<span class="chip">Mobile Friendly</span><span class="chip">SQLite Offline</span>', unsafe_allow_html=True)
+        menu = st.radio(
+            "Điều hướng",
+            ["🏠 Tổng quan", "📝 Giao dịch", "💼 Ví & quỹ", "📈 Phân tích", "⚙️ Cài đặt"],
+            label_visibility="collapsed",
+        )
+        st.markdown("---")
+        st.caption("Tài khoản mẫu: duc1 / 123456")
+        if st.button("🚪 Đăng xuất", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+    if menu == "🏠 Tổng quan":
+        render_dashboard(uid)
+    elif menu == "📝 Giao dịch":
+        render_transactions(uid)
+    elif menu == "💼 Ví & quỹ":
+        render_wallets_goals(uid)
+    elif menu == "📈 Phân tích":
+        render_analytics(uid)
+    elif menu == "⚙️ Cài đặt":
+        render_settings(uid, role)
+
+    render_quick_add(uid)
+
 
 if __name__ == "__main__":
     main()
