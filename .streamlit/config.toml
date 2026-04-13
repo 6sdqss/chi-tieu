@@ -1,0 +1,12 @@
+# Đường dẫn file: .streamlit/config.toml
+
+[theme]
+base="light"
+primaryColor="#0f766e"
+backgroundColor="#f0fdfa"
+secondaryBackgroundColor="#ffffff"
+textColor="#0f172a"
+font="sans serif"
+
+[client]
+toolbarMode = "minimal"
