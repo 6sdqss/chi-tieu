@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import date
 from app.config import PRIMARY_COLOR, ACCENT_COLOR, SUCCESS_COLOR, DANGER_COLOR
 from app.utils import format_vnd, get_current_month
@@ -10,110 +9,59 @@ import app.services as svc
 def inject_css():
     st.markdown(f"""
         <style>
-            /* Ẩn các thành phần thừa của Streamlit */
             #MainMenu, footer, header {{visibility: hidden;}}
+            .stApp {{ background-color: #f0fdfa; }}
+            .block-container {{ max-width: 1000px; padding: 2rem 1rem 6rem 1rem; }}
             
-            /* Background tổng thể trong trẻo hơn */
-            .stApp {{
-                background-color: #f0fdfa;
-            }}
-            
-            /* Chỉnh lại khung làm việc gọn gàng */
-            .block-container {{ 
-                max-width: 1000px; 
-                padding: 2rem 1rem 6rem 1rem; 
-            }}
-            
-            /* Banner Gradient phía trên */
             .hero-card {{
                 background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
-                color: white; 
-                border-radius: 20px; 
-                padding: 24px;
-                box-shadow: 0 10px 25px -5px rgba(13, 148, 136, 0.4); 
-                margin-bottom: 24px;
+                color: white; border-radius: 20px; padding: 24px;
+                box-shadow: 0 10px 25px -5px rgba(13, 148, 136, 0.4); margin-bottom: 24px;
             }}
             .hero-card div:first-child {{ font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; }}
             
-            /* Thẻ trắng bo góc mềm mại (Apple Style) */
             .soft-card {{
-                background: #ffffff; 
-                border: 1px solid #e2e8f0;
-                border-radius: 16px; 
-                padding: 16px; 
-                margin-bottom: 12px;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+                background: #ffffff; border: 1px solid #e2e8f0;
+                border-radius: 16px; padding: 16px; margin-bottom: 12px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
                 transition: transform 0.2s ease;
             }}
-            .soft-card:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
-            }}
+            .soft-card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08); }}
             
-            /* Căn chỉnh lại các hộp hiển thị số tiền */
             div[data-testid="metric-container"] {{
-                border: none; 
-                border-radius: 16px; 
-                padding: 16px;
-                background: #ffffff; 
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+                border: none; border-radius: 16px; padding: 16px;
+                background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
             }}
             div[data-testid="stMetricValue"] {{ font-weight: 800; color: #0f172a; }}
             div[data-testid="stMetricLabel"] {{ color: #64748b; font-size: 0.95rem; }}
             
-            /* Nút bấm to, bo góc lớn, dễ bấm trên mobile */
+            /* Nút bấm mặc định */
             .stButton>button {{ 
-                border-radius: 14px !important; 
-                min-height: 50px; 
-                font-weight: 700; 
-                font-size: 1.05rem;
-                border: 1px solid #e2e8f0 !important;
-                background: #ffffff !important;
-                color: #0f172a !important;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+                border-radius: 14px !important; min-height: 50px; font-weight: 700; font-size: 1.05rem;
+                border: 1px solid #e2e8f0 !important; background: #ffffff !important; color: #0f172a !important;
             }}
-            .stButton>button:hover {{
-                border-color: #0f766e !important;
-                color: #0f766e !important;
-            }}
+            .stButton>button:hover {{ border-color: #0f766e !important; color: #0f766e !important; }}
             
-            /* Nút bấm chính (Primary Button) */
-            button[kind="primary"] {{
-                background: #0f766e !important;
-                color: #ffffff !important;
-                border: none !important;
-            }}
-            button[kind="primary"]:hover {{
-                background: #0d9488 !important;
-                box-shadow: 0 4px 12px rgba(13,148,136,0.3) !important;
-            }}
+            /* Nút Primary */
+            button[kind="primary"] {{ background: #0f766e !important; color: #ffffff !important; border: none !important; }}
+            button[kind="primary"]:hover {{ background: #0d9488 !important; box-shadow: 0 4px 12px rgba(13,148,136,0.3) !important; }}
             
-            /* Thanh menu bên trái sáng sủa, sạch sẽ */
-            div[data-testid="stSidebar"] {{ 
-                background: #ffffff; 
-                border-right: 1px solid #e2e8f0;
-            }}
+            /* Tùy chỉnh Nút Xóa nhỏ gọn hơn */
+            .delete-btn button {{ min-height: 40px !important; border-radius: 10px !important; padding: 0 !important; }}
+            
+            div[data-testid="stSidebar"] {{ background: #ffffff; border-right: 1px solid #e2e8f0; }}
             div[data-testid="stSidebar"] * {{ color: #1e293b; }}
             
-            /* Input Form gọn gàng */
-            .stTextInput>div>div>input, .stNumberInput>div>div>input {{
-                border-radius: 10px;
-            }}
+            .stTextInput>div>div>input, .stNumberInput>div>div>input {{ border-radius: 10px; }}
             
-            /* Nút "+" nổi ở góc dưới (Floating Action Button) */
-            div[data-testid="stPopover"] {{
-                position: fixed !important; right: 24px !important; bottom: 24px !important; z-index: 999;
-            }}
+            div[data-testid="stPopover"] {{ position: fixed !important; right: 24px !important; bottom: 24px !important; z-index: 999; }}
             div[data-testid="stPopover"] > button {{
                 width: 64px !important; height: 64px !important; border-radius: 50% !important;
-                background: #14b8a6 !important;
-                border: 4px solid #fff !important; 
+                background: #14b8a6 !important; border: 4px solid #fff !important; 
                 box-shadow: 0 10px 25px rgba(20,184,166,0.5) !important;
             }}
             div[data-testid="stPopover"] > button * {{ display: none !important; }}
-            div[data-testid="stPopover"] > button::after {{
-                content: "+"; color: white; font-size: 34px; font-weight: 300; line-height: 1.1;
-            }}
+            div[data-testid="stPopover"] > button::after {{ content: "+"; color: white; font-size: 34px; font-weight: 300; line-height: 1.1; }}
         </style>
     """, unsafe_allow_html=True)
 
@@ -192,9 +140,9 @@ def render_dashboard(db, uid: int):
         for w in wallets:
             icon = "🏦" if w.type == "bank" else "💵"
             st.markdown(f"""
-                <div class="soft-card" style="display:flex; justify-content:space-between;">
-                    <div><strong>{icon} {w.name}</strong></div>
-                    <div style="color:{PRIMARY_COLOR}; font-weight:800;">{format_vnd(w.balance)}</div>
+                <div class="soft-card" style="display:flex; justify-content:space-between; align-items: center;">
+                    <div style="font-size: 1.1rem; color: #334155;"><strong>{icon} {w.name}</strong></div>
+                    <div style="color:{PRIMARY_COLOR}; font-weight:800; font-size: 1.2rem;">{format_vnd(w.balance)}</div>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -266,11 +214,62 @@ def render_transactions(db, uid: int):
                     st.success("Đã chuyển.")
                     st.rerun()
 
+    st.markdown("---")
     st.markdown("### 📒 Lịch sử giao dịch")
     df = svc.get_transactions_df(db, uid)
-    if not df.empty:
-        df["Hiển thị"] = df.apply(lambda r: f"-{format_vnd(r['amount'])}" if r['type']=='expense' else f"+{format_vnd(r['amount'])}", axis=1)
-        st.dataframe(df[["date", "wallet_name", "category_name", "Hiển thị", "note"]], use_container_width=True, hide_index=True)
+    
+    if df.empty:
+        st.info("Chưa có giao dịch nào.")
+    else:
+        # Giao diện Timeline mới (Gom nhóm theo ngày)
+        df['date_str'] = df['date'].dt.strftime('%d/%m/%Y')
+        unique_dates = df['date_str'].unique()
+        
+        for d_str in unique_dates:
+            st.markdown(f"<h5 style='color: #64748b; margin-top: 16px; margin-bottom: 8px;'>📅 {d_str}</h5>", unsafe_allow_html=True)
+            day_df = df[df['date_str'] == d_str]
+            
+            for _, row in day_df.iterrows():
+                tx_id = row['id']
+                tx_type = row['type']
+                amt = row['amount']
+                cat_name = row['category_name'] if pd.notna(row['category_name']) else f"Chuyển khoản ({row['wallet_name']} ➔ {row['target_wallet_name']})"
+                cat_icon = row['category_icon'] if pd.notna(row['category_icon']) else '🔄'
+                note = row['note'] if pd.notna(row['note']) and row['note'] else ''
+                
+                # Setup màu sắc và dấu
+                if tx_type == 'expense':
+                    color = DANGER_COLOR
+                    sign = "-"
+                elif tx_type == 'income':
+                    color = SUCCESS_COLOR
+                    sign = "+"
+                else:
+                    color = "#3b82f6"  # Màu xanh dương cho chuyển khoản
+                    sign = ""
+                
+                # Render Thẻ Giao Dịch
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns([1, 5, 4, 1.5], vertical_alignment="center")
+                    
+                    c1.markdown(f"<h2 style='margin:0;'>{cat_icon}</h2>", unsafe_allow_html=True)
+                    
+                    c2.markdown(f"""
+                        <div style='line-height: 1.2;'>
+                            <strong>{cat_name}</strong><br>
+                            <span style='color:#64748b; font-size:0.85rem;'>{note}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    c3.markdown(f"<div style='text-align: right; color: {color}; font-weight: 800; font-size: 1.1rem;'>{sign}{format_vnd(amt)}</div>", unsafe_allow_html=True)
+                    
+                    # Cột chứa nút Xóa
+                    with c4:
+                        st.markdown('<div class="delete-btn">', unsafe_allow_html=True)
+                        if st.button("🗑️", key=f"del_{tx_id}", help="Xóa giao dịch này", use_container_width=True):
+                            if svc.delete_transaction(db, uid, tx_id):
+                                st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
 
 def render_quick_add(db, uid: int):
     with st.popover("Thêm nhanh"):
@@ -285,7 +284,8 @@ def render_quick_add(db, uid: int):
             amt = st.number_input("Số tiền", min_value=0.0, step=10000.0)
             c_dict = {f"{c.icon} {c.name}": c.id for c in cats}
             cat = st.selectbox("Mục", list(c_dict.keys()))
+            note = st.text_input("Ghi chú")
             if st.form_submit_button("Lưu ngay", type="primary", use_container_width=True):
                 if amt > 0:
-                    svc.create_transaction(db, uid, wallets[0].id, c_dict[cat], "expense", amt, date.today(), "")
+                    svc.create_transaction(db, uid, wallets[0].id, c_dict[cat], "expense", amt, date.today(), note)
                     st.rerun()
