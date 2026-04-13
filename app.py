@@ -405,7 +405,7 @@ def get_transactions(uid: int):
         LEFT JOIN wallets tw ON t.target_wallet_id = tw.id
         LEFT JOIN categories c ON t.category_id = c.id
         WHERE t.user_id = ?
-        ORDER BY date DESC, id DESC
+        ORDER BY t.date DESC, t.id DESC
     """
     df = to_dataframe(query, (uid,))
     if not df.empty:
